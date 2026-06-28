@@ -15,6 +15,9 @@ _db_url = (
     or "sqlite:///./bonanza_ds.db"
 )
 
+if _db_url.startswith("postgres://"):
+    _db_url = _db_url.replace("postgres://", "postgresql://", 1)
+
 _connect_args = {}
 _pool_kwargs: dict = {}
 if _db_url.startswith("sqlite"):
@@ -25,8 +28,7 @@ else:
 engine = create_engine(_db_url, connect_args=_connect_args, **_pool_kwargs)
 
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
-_schema = None if _db_url.startswith("sqlite") else "bonanza_ds"
-Base = declarative_base(metadata=MetaData(schema=_schema))
+Base = declarative_base(metadata=MetaData())
 
 
 def get_db():
