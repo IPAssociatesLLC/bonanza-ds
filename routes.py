@@ -125,10 +125,22 @@ def get_google_product_category(category: str) -> str:
 # ─── App Factory ──────────────────────────────────────────────────────────────
 
 def create_app(static_dir: str) -> FastAPI:
-    init_db()
-    _seed_defaults()
+    global DB_INIT_ERROR
+    DB_INIT_ERROR = None
+    try:
+        init_db()
+        _seed_defaults()
+    except Exception as e:
+        import traceback
+        DB_INIT_ERROR = traceback.format_exc()
 
     api = APIRouter()
+
+    @api.get("/debug-db")
+    def debug_db():
+        from db import _db_url
+        safe_url = _db_url.split('@')[-1] if '@' in _db_url else _db_url
+        return {"error": DB_INIT_ERROR, "db_url_host": safe_url}
 
     # ─── Health ────────────────────────────────────────────────────────────
 
