@@ -1,7 +1,7 @@
 [project]
-name = "react-app"
+name = "bonanza-ds"
 version = "0.1.0"
-description = "React App with FastAPI Backend"
+description = "Bonanza DS - Drop Shipping Automation Platform for Bonanza Marketplace"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -10,6 +10,12 @@ dependencies = [
     "httpx==0.28.1",
     "python-multipart==0.0.22",
     "watchfiles==1.1.1",
+    "sqlalchemy>=2.0.50",
+    "psycopg2-binary>=2.9.12",
+    "google-genai>=2.8.0",
+    "pydantic>=2.12.5",
+    "scrapfly-sdk>=0.11.1",
+    "loguru>=0.7.3",
 ]
 
 [tool.uv]

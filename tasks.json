@@ -1,0 +1,67 @@
+[
+  {
+    "content": "[setup] Install Python deps + react-router-dom",
+    "id": "1",
+    "status": "completed"
+  },
+  {
+    "content": "[backend] Database models, API clients, profitability, routes",
+    "id": "2",
+    "status": "completed"
+  },
+  {
+    "content": "[frontend-core] Sidebar nav (grouped), TopBar, Layout, theme, App router, types",
+    "id": "3",
+    "status": "completed"
+  },
+  {
+    "content": "[frontend-pages] Dashboard + Sales Analytics pages",
+    "id": "4",
+    "status": "completed"
+  },
+  {
+    "content": "[frontend-pages] Product Scout + Scan Results pages",
+    "id": "5",
+    "status": "completed"
+  },
+  {
+    "content": "[frontend-pages] Scan Profiles page",
+    "id": "6",
+    "status": "completed"
+  },
+  {
+    "content": "[frontend-pages] Opportunities + Profit Calculator pages",
+    "id": "7",
+    "status": "completed"
+  },
+  {
+    "content": "[frontend-pages] Cashback Optimizer page",
+    "id": "8",
+    "status": "completed"
+  },
+  {
+    "content": "[frontend-pages] My Products + Bonanza Listings + Listing Builder pages",
+    "id": "9",
+    "status": "completed"
+  },
+  {
+    "content": "[frontend-pages] Google Shopping Feed + Activity Logs pages",
+    "id": "10",
+    "status": "completed"
+  },
+  {
+    "content": "[frontend-pages] Settings: API Connections + Pricing Rules + Account",
+    "id": "11",
+    "status": "completed"
+  },
+  {
+    "content": "[frontend-pages] Admin Dashboard + Admin Users pages",
+    "id": "12",
+    "status": "completed"
+  },
+  {
+    "content": "[test] Start dev server, verify all pages load, fix errors",
+    "id": "13",
+    "status": "in_progress"
+  }
+]

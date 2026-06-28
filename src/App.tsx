@@ -1,45 +1,51 @@
-import type { ApiStatus, HealthResponse } from "./types";
-import { Card, CardContent } from "@/components/ui/card";
-import { useEffect, useState } from "react";
+import { BrowserRouter, Routes, Route } from "react-router-dom"
+import { Layout } from "@/components/Layout"
+import { DashboardPage } from "@/pages/DashboardPage"
+import { AnalyticsPage } from "@/pages/AnalyticsPage"
+import { ProductScoutPage } from "@/pages/ProductScoutPage"
+import { ScanProfilesPage } from "@/pages/ScanProfilesPage"
+import { ScanResultsPage } from "@/pages/ScanResultsPage"
+import { OpportunitiesPage } from "@/pages/OpportunitiesPage"
+import { ProfitCalculatorPage } from "@/pages/ProfitCalculatorPage"
+import { CashbackPage } from "@/pages/CashbackPage"
+import { ProductsPage } from "@/pages/ProductsPage"
+import { ListingsPage } from "@/pages/ListingsPage"
+import { ListingBuilderPage } from "@/pages/ListingBuilderPage"
+import { GoogleFeedPage } from "@/pages/GoogleFeedPage"
+import { LogsPage } from "@/pages/LogsPage"
+import { ApiConnectionsPage } from "@/pages/ApiConnectionsPage"
+import { PricingRulesPage } from "@/pages/PricingRulesPage"
+import { AccountPage } from "@/pages/AccountPage"
+import { AdminPage } from "@/pages/AdminPage"
+import { AdminUsersPage } from "@/pages/AdminUsersPage"
 
 function App() {
-  const [apiStatus, setApiStatus] = useState<ApiStatus>("checking");
-
-  useEffect(() => {
-    fetch("/api/health")
-      .then((r) => r.json())
-      .then((data: HealthResponse) => setApiStatus(data?.ok ? "connected" : "error"))
-      .catch(() => setApiStatus("error"));
-  }, []);
-
-  const dotColor =
-    apiStatus === "connected" ? "#22c55e" : apiStatus === "error" ? "#ef4444" : "#ccc";
-  const textColor =
-    apiStatus === "connected" ? "#16a34a" : apiStatus === "error" ? "#dc2626" : undefined;
-  const statusText =
-    apiStatus === "checking"
-      ? "Checking API\u2026"
-      : apiStatus === "connected"
-        ? "API connected"
-        : "API unreachable";
-
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background">
-      <Card>
-        <CardContent className="pt-6 text-center">
-          <h1 className="text-2xl font-bold text-foreground mb-2">Welcome to your React Web App</h1>
-          <p className="text-muted-foreground">Start building something amazing.</p>
-          <div className="mt-4 flex items-center justify-center gap-2 text-sm">
-            <span
-              className="inline-block h-2.5 w-2.5 rounded-full"
-              style={{ background: dotColor }}
-            />
-            <span style={{ color: textColor }}>{statusText}</span>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  );
+    <BrowserRouter>
+      <Routes>
+        <Route element={<Layout />}>
+          <Route path="/" element={<DashboardPage />} />
+          <Route path="/analytics" element={<AnalyticsPage />} />
+          <Route path="/product-scout" element={<ProductScoutPage />} />
+          <Route path="/scan-profiles" element={<ScanProfilesPage />} />
+          <Route path="/scan-results" element={<ScanResultsPage />} />
+          <Route path="/opportunities" element={<OpportunitiesPage />} />
+          <Route path="/profit-calculator" element={<ProfitCalculatorPage />} />
+          <Route path="/cashback" element={<CashbackPage />} />
+          <Route path="/products" element={<ProductsPage />} />
+          <Route path="/listings" element={<ListingsPage />} />
+          <Route path="/listing-builder" element={<ListingBuilderPage />} />
+          <Route path="/google-feed" element={<GoogleFeedPage />} />
+          <Route path="/logs" element={<LogsPage />} />
+          <Route path="/settings/api" element={<ApiConnectionsPage />} />
+          <Route path="/settings/pricing" element={<PricingRulesPage />} />
+          <Route path="/settings/account" element={<AccountPage />} />
+          <Route path="/admin" element={<AdminPage />} />
+          <Route path="/admin/users" element={<AdminUsersPage />} />
+        </Route>
+      </Routes>
+    </BrowserRouter>
+  )
 }
 
-export default App;
+export default App

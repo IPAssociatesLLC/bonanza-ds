@@ -17,8 +17,8 @@ $uvHash = (Get-FileHash -Algorithm MD5 uv.lock -ErrorAction SilentlyContinue).Ha
 $uvHashFile = ".venv/.uv-hash-$uvHash"
 if ($uvHash -and -not (Test-Path $uvHashFile)) {
     Write-Host "[+$(elapsed)ms] uv sync starting..."
-    uv sync --compile-bytecode --frozen
-    if ($LASTEXITCODE -ne 0) { uv sync --compile-bytecode }
+    python -m uv sync --compile-bytecode --frozen
+    if ($LASTEXITCODE -ne 0) { python -m uv sync --compile-bytecode }
     Remove-Item .venv/.uv-hash-* -ErrorAction SilentlyContinue
     New-Item -ItemType File -Path $uvHashFile -Force | Out-Null
     Write-Host "[+$(elapsed)ms] uv sync done"
@@ -27,16 +27,16 @@ if ($uvHash -and -not (Test-Path $uvHashFile)) {
 }
 
 # Install JS deps (with lockfile hash guard)
-$bunHash = (Get-FileHash -Algorithm MD5 bun.lock -ErrorAction SilentlyContinue).Hash
-$bunHashFile = "node_modules/.bun-hash-$bunHash"
-if ($bunHash -and -not (Test-Path $bunHashFile)) {
-    Write-Host "[+$(elapsed)ms] bun install starting..."
-    bun install --frozen-lockfile
-    Remove-Item node_modules/.bun-hash-* -ErrorAction SilentlyContinue
-    New-Item -ItemType File -Path $bunHashFile -Force | Out-Null
-    Write-Host "[+$(elapsed)ms] bun install done"
+$npmHash = (Get-FileHash -Algorithm MD5 package.json -ErrorAction SilentlyContinue).Hash
+$npmHashFile = "node_modules/.npm-hash-$npmHash"
+if ($npmHash -and -not (Test-Path $npmHashFile)) {
+    Write-Host "[+$(elapsed)ms] npm install starting..."
+    npm install --no-audit --no-fund
+    Remove-Item node_modules/.npm-hash-* -ErrorAction SilentlyContinue
+    New-Item -ItemType File -Path $npmHashFile -Force | Out-Null
+    Write-Host "[+$(elapsed)ms] npm install done"
 } else {
-    Write-Host "[+$(elapsed)ms] bun install skipped (lockfile unchanged)"
+    Write-Host "[+$(elapsed)ms] npm install skipped (lockfile unchanged)"
 }
 
 # Start FastAPI backend as a background job
@@ -44,14 +44,14 @@ Write-Host "[+$(elapsed)ms] Starting FastAPI on port $BackendPort"
 $backendJob = Start-Job -ScriptBlock {
     param($port)
     Set-Location $using:PWD
-    uv run uvicorn app:asgi --reload --host 0.0.0.0 --port $port `
+    python -m uv run uvicorn app:asgi --reload --host 0.0.0.0 --port $port `
         --reload-exclude ".venv" --reload-exclude ".git" --reload-exclude "__pycache__" --reload-exclude "*.pyc" --reload-exclude "node_modules"
 } -ArgumentList $BackendPort
 
 # Start Vite dev server (foreground)
 Write-Host "[+$(elapsed)ms] Starting Vite on port $VitePort"
 try {
-    bunx vite --host 0.0.0.0 --port $VitePort --strictPort
+    npx vite --host 0.0.0.0 --port $VitePort --strictPort
 } finally {
     # Cleanup backend when Vite exits
     Stop-Job $backendJob -ErrorAction SilentlyContinue

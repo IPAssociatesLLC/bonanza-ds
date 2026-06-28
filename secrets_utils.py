@@ -49,6 +49,7 @@ def get_oauth_access_token(connector_id: str) -> str:
         f"{backend_url}/deployments/connectors/{connector_id}/access_token",
         headers={"Authorization": f"Bearer {token}"},
         timeout=30.0,
+        verify=False,
     )
     response.raise_for_status()
 
