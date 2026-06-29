@@ -14,7 +14,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Search, Zap, Star, TrendingUp, Package, AlertCircle, Loader2 } from "lucide-react"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Search, Zap, Star, TrendingUp, Package, AlertCircle, Loader2, ExternalLink, Store } from "lucide-react"
 import type { Opportunity } from "@/types"
 
 interface OpportunitiesResponse {
@@ -32,9 +38,14 @@ export function ProductScoutPage() {
   const [category, setCategory] = useState("")
   const [scanning, setScanning] = useState(false)
   const [scanError, setScanError] = useState<string | null>(null)
+  const [detailId, setDetailId] = useState<number | null>(null)
 
   const { data, loading, error, refetch } = useFetch<OpportunitiesResponse>(
     "/api/opportunities?limit=12"
+  )
+
+  const { data: detailOpp, loading: detailLoading } = useFetch<Opportunity>(
+    detailId !== null ? `/api/opportunities/${detailId}` : ""
   )
 
   const opportunities = data?.items ?? []
@@ -227,15 +238,143 @@ export function ProductScoutPage() {
                     </div>
                   </div>
 
-                  <Link to="/opportunities" className="mt-3 block">
-                    <Button variant="outline" size="sm" className="w-full">View Details</Button>
-                  </Link>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="mt-3 w-full"
+                    onClick={() => setDetailId(opp.id)}
+                  >
+                    View Details
+                  </Button>
                 </CardContent>
               </Card>
             ))}
           </div>
         )}
       </div>
+
+      {/* Detail Dialog */}
+      <Dialog open={detailId !== null} onOpenChange={(open) => !open && setDetailId(null)}>
+        <DialogContent className="w-full overflow-y-auto sm:max-w-[800px] max-h-[90vh]">
+          <DialogHeader>
+            <DialogTitle>Opportunity Details</DialogTitle>
+          </DialogHeader>
+
+          {detailLoading && <LoadingSpinner text="Loading details..." />}
+
+          {!detailLoading && detailOpp && (
+            <div className="space-y-5 px-4 pb-6">
+              {/* Images */}
+              {detailOpp.image_urls && detailOpp.image_urls.length > 0 && (
+                <div className="flex gap-2 overflow-x-auto">
+                  {detailOpp.image_urls.slice(0, 4).map((url, i) => (
+                    <img
+                      key={i}
+                      src={url}
+                      alt={`${detailOpp.title} ${i + 1}`}
+                      className="h-20 w-20 shrink-0 rounded-md object-cover"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).style.display = "none"
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {/* Title & Status */}
+              <div>
+                <h3 className="text-lg font-semibold text-foreground">{detailOpp.title}</h3>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <Badge variant="outline" className="capitalize">{detailOpp.source}</Badge>
+                  {detailOpp.category && (
+                    <Badge variant="secondary" className="capitalize">{detailOpp.category}</Badge>
+                  )}
+                </div>
+              </div>
+
+              {/* Description */}
+              {detailOpp.description && (
+                <div>
+                  <h4 className="mb-1 text-sm font-semibold text-foreground">Description</h4>
+                  <p className="text-sm text-muted-foreground line-clamp-4">{detailOpp.description}</p>
+                </div>
+              )}
+
+              {/* Pricing */}
+              <div>
+                <h4 className="mb-2 text-sm font-semibold text-foreground">Pricing & Profitability</h4>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  <div className="rounded-lg bg-muted/50 p-3">
+                    <p className="text-xs text-muted-foreground">Source Price</p>
+                    <p className="text-lg font-bold text-foreground">{formatCurrency(detailOpp.source_price)}</p>
+                  </div>
+                  <div className="rounded-lg bg-muted/50 p-3">
+                    <p className="text-xs text-muted-foreground">Shipping Cost</p>
+                    <p className="text-lg font-bold text-foreground">{formatCurrency(detailOpp.shipping_cost)}</p>
+                  </div>
+                  <div className="rounded-lg bg-muted/50 p-3">
+                    <p className="text-xs text-muted-foreground">Target Price</p>
+                    <p className="text-lg font-bold text-foreground">{formatCurrency(detailOpp.target_price)}</p>
+                  </div>
+                  <div className="rounded-lg bg-muted/50 p-3">
+                    <p className="text-xs text-muted-foreground">Margin</p>
+                    <p className="text-lg font-bold text-green-500">{detailOpp.margin_pct.toFixed(1)}%</p>
+                  </div>
+                  <div className="rounded-lg bg-muted/50 p-3">
+                    <p className="text-xs text-muted-foreground">Cashback ({detailOpp.cashback_rate}%)</p>
+                    <p className="text-lg font-bold text-green-500">{formatCurrency(detailOpp.cashback_amount)}</p>
+                  </div>
+                  <div className="rounded-lg bg-primary/10 p-3">
+                    <p className="text-xs text-primary/80">Final Profit</p>
+                    <p className="text-lg font-bold text-primary">{formatCurrency(detailOpp.final_profit)}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Product Metrics */}
+              <div>
+                <h4 className="mb-2 text-sm font-semibold text-foreground">Product Metrics</h4>
+                <div className="space-y-2 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-1.5 text-muted-foreground">
+                      <Star className="h-3.5 w-3.5" />
+                      Rating
+                    </span>
+                    <span className="font-medium text-foreground">{detailOpp.rating.toFixed(1)} ({formatNumber(detailOpp.review_count)} reviews)</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-1.5 text-muted-foreground">
+                      <TrendingUp className="h-3.5 w-3.5" />
+                      Monthly Sales
+                    </span>
+                    <span className="font-medium text-foreground">{formatNumber(detailOpp.monthly_sales)}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-1.5 text-muted-foreground">
+                      <Package className="h-3.5 w-3.5" />
+                      Stock
+                    </span>
+                    <span className="font-medium text-foreground">{formatNumber(detailOpp.stock)}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Source Link */}
+              {detailOpp.source_url && (
+                <a
+                  href={detailOpp.source_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-4 flex items-center gap-1.5 text-sm text-primary hover:underline"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  View on {detailOpp.source}
+                </a>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
