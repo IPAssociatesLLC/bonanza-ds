@@ -124,6 +124,7 @@ class Listing(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     opportunity_id = Column(Integer, ForeignKey("opportunities.id"), nullable=True)
+    opportunity = relationship("Opportunity")
 
     bonanza_item_id = Column(String(100), nullable=True)
     title = Column(Text, nullable=False)

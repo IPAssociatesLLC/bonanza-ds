@@ -55,7 +55,10 @@ export function ProductScoutPage() {
     setScanning(true)
     setScanError(null)
     try {
-      await apiPost("/api/run-scan", { profile_id: 1 })
+      await apiPost("/api/run-scan", { 
+        profile_id: 1,
+        override_keyword: keyword || undefined
+      })
       refetch()
     } catch (e) {
       setScanError(e instanceof Error ? e.message : "Scan failed to start")
@@ -67,7 +70,11 @@ export function ProductScoutPage() {
   async function handleSave(id: number) {
     setActionLoading(`save-${id}`)
     try {
-      await fetch(`/api/opportunities/${id}/status?status=approved`, { method: "PUT" })
+      await apiPost("/api/import-to-bonanza", {
+        opportunity_ids: [id],
+        auto_generate: true,
+        push_to_bonanza: false
+      })
       refetch()
     } catch (e) {
       // Ignore
@@ -285,7 +292,7 @@ export function ProductScoutPage() {
 
       {/* Detail Dialog */}
       <Dialog open={detailId !== null} onOpenChange={(open) => !open && setDetailId(null)}>
-        <DialogContent className="w-full overflow-y-auto sm:max-w-[800px] max-h-[90vh] bg-background">
+        <DialogContent className="w-full overflow-y-auto sm:max-w-[800px] max-h-[90vh] bg-white dark:bg-zinc-950 border border-border text-card-foreground shadow-xl sm:rounded-xl">
           <DialogHeader>
             <DialogTitle>Opportunity Details</DialogTitle>
           </DialogHeader>
@@ -294,21 +301,12 @@ export function ProductScoutPage() {
 
           {!detailLoading && detailOpp && (
             <div className="space-y-5 px-4 pb-6">
-              {/* Images */}
+              {/* Image Gallery */}
               {detailOpp.image_urls && detailOpp.image_urls.length > 0 && (
-                <div className="mb-4">
-                  <div className="flex h-64 items-center justify-center rounded-lg bg-muted overflow-hidden">
-                    <img
-                      src={detailOpp.image_urls[selectedDialogImageIndex] || detailOpp.image_urls[0]}
-                      alt={detailOpp.title}
-                      className="h-full w-full object-contain"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).style.display = "none"
-                      }}
-                    />
-                  </div>
+                <div className="mb-4 flex flex-col sm:flex-row gap-4 h-[400px]">
+                  {/* Left: Thumbnails */}
                   {detailOpp.image_urls.length > 1 && (
-                    <div className="mt-3 flex gap-2 overflow-x-auto pb-2">
+                    <div className="flex flex-row sm:flex-col gap-2 overflow-auto sm:w-20 shrink-0">
                       {detailOpp.image_urls.map((url, idx) => (
                         <div key={idx} className="relative group shrink-0">
                           <img
@@ -324,6 +322,17 @@ export function ProductScoutPage() {
                       ))}
                     </div>
                   )}
+                  {/* Right: Main Image */}
+                  <div className="flex-1 flex items-center justify-center rounded-lg bg-muted overflow-hidden border">
+                    <img
+                      src={detailOpp.image_urls[selectedDialogImageIndex] || detailOpp.image_urls[0]}
+                      alt={detailOpp.title}
+                      className="h-full w-full object-contain"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).style.display = "none"
+                      }}
+                    />
+                  </div>
                 </div>
               )}
 
@@ -350,27 +359,27 @@ export function ProductScoutPage() {
               <div>
                 <h4 className="mb-2 text-sm font-semibold text-foreground">Pricing & Profitability</h4>
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                  <div className="rounded-lg bg-muted/50 p-3">
+                  <div className="rounded-lg bg-muted/50 p-3 border border-border">
                     <p className="text-xs text-muted-foreground">Source Price</p>
                     <p className="text-lg font-bold text-foreground">{formatCurrency(detailOpp.source_price)}</p>
                   </div>
-                  <div className="rounded-lg bg-muted/50 p-3">
+                  <div className="rounded-lg bg-muted/50 p-3 border border-border">
                     <p className="text-xs text-muted-foreground">Shipping Cost</p>
                     <p className="text-lg font-bold text-foreground">{formatCurrency(detailOpp.shipping_cost)}</p>
                   </div>
-                  <div className="rounded-lg bg-muted/50 p-3">
+                  <div className="rounded-lg bg-muted/50 p-3 border border-border">
                     <p className="text-xs text-muted-foreground">Target Price</p>
                     <p className="text-lg font-bold text-foreground">{formatCurrency(detailOpp.target_price)}</p>
                   </div>
-                  <div className="rounded-lg bg-muted/50 p-3">
+                  <div className="rounded-lg bg-muted/50 p-3 border border-border">
                     <p className="text-xs text-muted-foreground">Margin</p>
                     <p className="text-lg font-bold text-green-500">{detailOpp.margin_pct.toFixed(1)}%</p>
                   </div>
-                  <div className="rounded-lg bg-muted/50 p-3">
+                  <div className="rounded-lg bg-muted/50 p-3 border border-border">
                     <p className="text-xs text-muted-foreground">Cashback ({detailOpp.cashback_rate}%)</p>
                     <p className="text-lg font-bold text-green-500">{formatCurrency(detailOpp.cashback_amount)}</p>
                   </div>
-                  <div className="rounded-lg bg-primary/10 p-3">
+                  <div className="rounded-lg bg-primary/10 p-3 border border-primary/20">
                     <p className="text-xs text-primary/80">Final Profit</p>
                     <p className="text-lg font-bold text-primary">{formatCurrency(detailOpp.final_profit)}</p>
                   </div>

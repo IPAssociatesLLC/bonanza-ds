@@ -71,11 +71,13 @@ class RunScanRequest(BaseModel):
     profile_id: int
     octoparse_task_id: str | None = None
     max_products: int = 100
+    override_keyword: str | None = None
 
 
 class ImportToBonanzaRequest(BaseModel):
     opportunity_ids: list[int]
     auto_generate: bool = True
+    push_to_bonanza: bool = True
 
 
 class UpdateListingRequest(BaseModel):
@@ -294,7 +296,10 @@ def create_app(static_dir: str) -> FastAPI:
             from aliexpress_scraper.aliexpress import scrape_search
 
             # Just take the first keyword if multiple for simplicity or iterate. We'll use the first one.
-            keyword = [k.strip() for k in keywords.split(",") if k.strip()][0] if keywords else "surfboard"
+            if req.override_keyword:
+                keyword = req.override_keyword.strip()
+            else:
+                keyword = [k.strip() for k in keywords.split(",") if k.strip()][0] if keywords else "surfboard"
             url = f"https://www.aliexpress.com/w/wholesale-{keyword}.html"
             
             raw_products = asyncio.run(scrape_search(url, max_pages=3))
@@ -427,15 +432,19 @@ def create_app(static_dir: str) -> FastAPI:
             raise HTTPException(404, "Opportunity not found")
         result = _opp_dict(o)
         # Add vendor risk analysis
-        result["vendor_analysis"] = analyze_vendor_risk({
-            "seller_name": o.seller_name,
-            "seller_rating": o.seller_rating,
-            "seller_years": o.seller_years,
-            "rating": o.rating,
-            "monthly_sales": o.monthly_sales,
-            "review_count": o.review_count,
-            "stock": o.stock,
-        })
+        try:
+            result["vendor_analysis"] = analyze_vendor_risk({
+                "seller_name": o.seller_name,
+                "seller_rating": o.seller_rating,
+                "seller_years": o.seller_years,
+                "rating": o.rating,
+                "monthly_sales": o.monthly_sales,
+                "review_count": o.review_count,
+                "stock": o.stock,
+            })
+        except Exception as e:
+            logger.error(f"Vendor risk analysis failed: {e}")
+            result["vendor_analysis"] = None
         return result
 
     @api.put("/opportunities/{opp_id}/status")
@@ -569,48 +578,56 @@ def create_app(static_dir: str) -> FastAPI:
             db.commit()
             db.refresh(listing)
 
-            # Send to Bonanza
-            try:
-                item_data = {
-                    "title": title,
-                    "description": description,
-                    "price": o.target_price,
-                    "quantity": listing.quantity,
-                    "category": o.category,
-                    "shippingCost": o.shipping_cost,
-                    "images": images,
-                    "brand": "brand not available",
-                    "upc": "brand not available",
-                    "mpn": mpn_val,
-                    "identifier_exists": False,
-                    "google_product_category": gpc,
-                    "condition": "new",
-                    "external_url": o.source_url,
-                }
-                resp = bonanza.add_multiple_fixed_price_items([item_data])
-                listing.bonanza_response = str(resp)
-                listing.status = "listed"
+            if req.push_to_bonanza:
+                # Send to Bonanza
+                try:
+                    item_data = {
+                        "title": title,
+                        "description": description,
+                        "price": o.target_price,
+                        "quantity": listing.quantity,
+                        "category": o.category,
+                        "shippingCost": o.shipping_cost,
+                        "images": images,
+                        "brand": "brand not available",
+                        "upc": "brand not available",
+                        "mpn": mpn_val,
+                        "identifier_exists": False,
+                        "google_product_category": gpc,
+                        "condition": "new",
+                        "external_url": o.source_url,
+                    }
+                    resp = bonanza.add_multiple_fixed_price_items([item_data])
+                    listing.bonanza_response = str(resp)
+                    listing.status = "listed"
 
-                # Extract Bonanza item ID from response
-                items_resp = resp.get("addFixedPriceItemResponse", {}).get("items", [])
-                if items_resp:
-                    listing.bonanza_item_id = str(items_resp[0].get("itemId", ""))
+                    # Extract Bonanza item ID from response
+                    items_resp = resp.get("addFixedPriceItemResponse", {}).get("items", [])
+                    if items_resp:
+                        listing.bonanza_item_id = str(items_resp[0].get("itemId", ""))
 
-                o.status = "imported"
+                    o.status = "imported"
+                    results.append({
+                        "opportunity_id": opp_id,
+                        "listing_id": listing.id,
+                        "status": "listed",
+                        "bonanza_item_id": listing.bonanza_item_id,
+                    })
+                except Exception as e:
+                    listing.status = "failed"
+                    listing.bonanza_response = str(e)
+                    results.append({
+                        "opportunity_id": opp_id,
+                        "listing_id": listing.id,
+                        "status": "failed",
+                        "message": str(e),
+                    })
+            else:
+                o.status = "approved"
                 results.append({
                     "opportunity_id": opp_id,
                     "listing_id": listing.id,
-                    "status": "listed",
-                    "bonanza_item_id": listing.bonanza_item_id,
-                })
-            except Exception as e:
-                listing.status = "failed"
-                listing.bonanza_response = str(e)
-                results.append({
-                    "opportunity_id": opp_id,
-                    "listing_id": listing.id,
-                    "status": "failed",
-                    "message": str(e),
+                    "status": "pending",
                 })
 
             listing.updated_at = datetime.utcnow()
@@ -974,6 +991,7 @@ def _listing_dict(l: Listing) -> dict:
         "bonanza_item_id": l.bonanza_item_id,
         "title": l.title, "description": l.description,
         "price": l.price, "quantity": l.quantity,
+        "source_price": l.opportunity.source_price if l.opportunity else l.price,
         "category": l.category, "shipping_cost": l.shipping_cost,
         "image_urls": l.image_urls.split("|") if l.image_urls else [],
         "external_url": l.external_url,
