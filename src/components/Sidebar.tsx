@@ -115,6 +115,7 @@ export function Sidebar({ currentPath, isOpen, setIsOpen }: { currentPath: strin
         </div>
       </div>
     </aside>
+    </>
   )
 }
 
