@@ -5,7 +5,7 @@ from sqlalchemy import (
     create_engine, Column, Integer, String, Float, Boolean, Text,
     DateTime, ForeignKey, JSON, MetaData,
 )
-from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.orm import sessionmaker, declarative_base, relationship
 
 # Neon DB (cloud) or local SQLite fallback
 _db_url = (
