@@ -297,7 +297,7 @@ def create_app(static_dir: str) -> FastAPI:
             keyword = [k.strip() for k in keywords.split(",") if k.strip()][0] if keywords else "surfboard"
             url = f"https://www.aliexpress.com/w/wholesale-{keyword}.html"
             
-            raw_products = asyncio.run(scrape_search(url, max_pages=1))
+            raw_products = asyncio.run(scrape_search(url, max_pages=3))
 
             opportunities_created = 0
             for raw in raw_products[:req.max_products]:
