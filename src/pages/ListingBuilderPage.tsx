@@ -77,6 +77,17 @@ export function ListingBuilderPage() {
   const [creating, setCreating] = useState(false)
   const [result, setResult] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [selectedImageIndex, setSelectedImageIndex] = useState(0)
+
+  function handleRemoveImage(index: number) {
+    const currentImages = form.imageUrls.split("\n").filter(Boolean)
+    currentImages.splice(index, 1)
+    setForm({ ...form, imageUrls: currentImages.join("\n") })
+    if (selectedImageIndex >= currentImages.length) {
+      setSelectedImageIndex(Math.max(0, currentImages.length - 1))
+    }
+  }
+
 
   const { data, loading, error: fetchError } = useFetch<OpportunitiesResponse>("/api/opportunities?limit=100")
   const opportunities = data?.items ?? []
@@ -345,21 +356,49 @@ export function ListingBuilderPage() {
               <CardTitle className="text-base">Live Preview</CardTitle>
             </CardHeader>
             <CardContent>
-              {/* Image area */}
-              <div className="mb-4 flex h-48 items-center justify-center rounded-lg bg-muted">
-                {images.length > 0 ? (
-                  <img
-                    src={images[0]}
-                    alt={form.title}
-                    className="h-full w-full rounded-lg object-cover"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).style.display = "none"
-                    }}
-                  />
-                ) : (
-                  <div className="flex flex-col items-center gap-2 text-muted-foreground">
-                    <ImageIcon className="h-8 w-8" />
-                    <span className="text-xs">No image</span>
+              <div className="mb-4">
+                <div className="flex h-64 items-center justify-center rounded-lg bg-muted overflow-hidden">
+                  {images.length > 0 ? (
+                    <img
+                      src={images[selectedImageIndex] || images[0]}
+                      alt={form.title}
+                      className="h-full w-full object-contain"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).style.display = "none"
+                      }}
+                    />
+                  ) : (
+                    <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                      <ImageIcon className="h-8 w-8" />
+                      <span className="text-xs">No image</span>
+                    </div>
+                  )}
+                </div>
+                {images.length > 0 && (
+                  <div className="mt-3 flex gap-2 overflow-x-auto pb-2">
+                    {images.map((url, idx) => (
+                      <div key={idx} className="relative group shrink-0">
+                        <img
+                          src={url}
+                          alt={`Thumbnail ${idx + 1}`}
+                          className={`h-16 w-16 cursor-pointer rounded-md object-cover border-2 transition-all ${selectedImageIndex === idx ? 'border-primary' : 'border-transparent hover:border-primary/50'}`}
+                          onClick={() => setSelectedImageIndex(idx)}
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display = "none"
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className="absolute -top-1 -right-1 hidden h-5 w-5 items-center justify-center rounded-full bg-destructive text-destructive-foreground opacity-90 hover:opacity-100 group-hover:flex"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleRemoveImage(idx)
+                          }}
+                        >
+                          <XCircle className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>

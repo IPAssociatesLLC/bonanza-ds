@@ -39,6 +39,8 @@ export function ProductScoutPage() {
   const [scanning, setScanning] = useState(false)
   const [scanError, setScanError] = useState<string | null>(null)
   const [detailId, setDetailId] = useState<number | null>(null)
+  const [selectedDialogImageIndex, setSelectedDialogImageIndex] = useState(0)
+  const [actionLoading, setActionLoading] = useState<string | null>(null)
 
   const { data, loading, error, refetch } = useFetch<OpportunitiesResponse>(
     "/api/opportunities?limit=12"
@@ -59,6 +61,18 @@ export function ProductScoutPage() {
       setScanError(e instanceof Error ? e.message : "Scan failed to start")
     } finally {
       setScanning(false)
+    }
+  }
+
+  async function handleSave(id: number) {
+    setActionLoading(`save-${id}`)
+    try {
+      await fetch(`/api/opportunities/${id}/status?status=approved`, { method: "PUT" })
+      refetch()
+    } catch (e) {
+      // Ignore
+    } finally {
+      setActionLoading(null)
     }
   }
 
@@ -237,14 +251,31 @@ export function ProductScoutPage() {
                     </div>
                   </div>
 
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    className="mt-3 w-full"
-                    onClick={() => setDetailId(opp.id)}
-                  >
-                    View Details
-                  </Button>
+                  <div className="mt-3 flex items-center gap-2">
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="flex-1"
+                      onClick={() => {
+                        setDetailId(opp.id)
+                        setSelectedDialogImageIndex(0)
+                      }}
+                    >
+                      View Details
+                    </Button>
+                    <Button 
+                      size="sm" 
+                      className="flex-1"
+                      onClick={() => handleSave(opp.id)}
+                      disabled={actionLoading === `save-${opp.id}`}
+                    >
+                      {actionLoading === `save-${opp.id}` ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        "Save"
+                      )}
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
             ))}
@@ -254,7 +285,7 @@ export function ProductScoutPage() {
 
       {/* Detail Dialog */}
       <Dialog open={detailId !== null} onOpenChange={(open) => !open && setDetailId(null)}>
-        <DialogContent className="w-full overflow-y-auto sm:max-w-[800px] max-h-[90vh]">
+        <DialogContent className="w-full overflow-y-auto sm:max-w-[800px] max-h-[90vh] bg-background">
           <DialogHeader>
             <DialogTitle>Opportunity Details</DialogTitle>
           </DialogHeader>
@@ -265,18 +296,34 @@ export function ProductScoutPage() {
             <div className="space-y-5 px-4 pb-6">
               {/* Images */}
               {detailOpp.image_urls && detailOpp.image_urls.length > 0 && (
-                <div className="flex gap-2 overflow-x-auto">
-                  {detailOpp.image_urls.slice(0, 4).map((url, i) => (
+                <div className="mb-4">
+                  <div className="flex h-64 items-center justify-center rounded-lg bg-muted overflow-hidden">
                     <img
-                      key={i}
-                      src={url}
-                      alt={`${detailOpp.title} ${i + 1}`}
-                      className="h-20 w-20 shrink-0 rounded-md object-cover"
+                      src={detailOpp.image_urls[selectedDialogImageIndex] || detailOpp.image_urls[0]}
+                      alt={detailOpp.title}
+                      className="h-full w-full object-contain"
                       onError={(e) => {
                         (e.target as HTMLImageElement).style.display = "none"
                       }}
                     />
-                  ))}
+                  </div>
+                  {detailOpp.image_urls.length > 1 && (
+                    <div className="mt-3 flex gap-2 overflow-x-auto pb-2">
+                      {detailOpp.image_urls.map((url, idx) => (
+                        <div key={idx} className="relative group shrink-0">
+                          <img
+                            src={url}
+                            alt={`Thumbnail ${idx + 1}`}
+                            className={`h-16 w-16 cursor-pointer rounded-md object-cover border-2 transition-all ${selectedDialogImageIndex === idx ? 'border-primary' : 'border-transparent hover:border-primary/50'}`}
+                            onClick={() => setSelectedDialogImageIndex(idx)}
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).style.display = "none"
+                            }}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -358,18 +405,33 @@ export function ProductScoutPage() {
                 </div>
               </div>
 
-              {/* Source Link */}
-              {detailOpp.source_url && (
-                <a
-                  href={detailOpp.source_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="mt-4 flex items-center gap-1.5 text-sm text-primary hover:underline"
+              {/* Source Link & Save Button */}
+              <div className="mt-4 flex items-center justify-between border-t pt-4">
+                {detailOpp.source_url ? (
+                  <a
+                    href={detailOpp.source_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 text-sm text-primary hover:underline"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    View on {detailOpp.source}
+                  </a>
+                ) : (
+                  <div />
+                )}
+                
+                <Button 
+                  onClick={() => handleSave(detailOpp.id)}
+                  disabled={actionLoading === `save-${detailOpp.id}`}
                 >
-                  <ExternalLink className="h-3.5 w-3.5" />
-                  View on {detailOpp.source}
-                </a>
-              )}
+                  {actionLoading === `save-${detailOpp.id}` ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    "Save to Opportunities"
+                  )}
+                </Button>
+              </div>
             </div>
           )}
         </DialogContent>
