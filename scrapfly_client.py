@@ -82,10 +82,25 @@ class ScrapflyClient:
         except ValueError:
             price = 0.0
             
-        image_obj = raw.get("image", {})
-        image_url = image_obj.get("imgUrl", "") if isinstance(image_obj, dict) else str(raw.get("image", ""))
-        if image_url and not image_url.startswith("http"):
-            image_url = "https:" + image_url
+        image_urls = []
+        # Check if the 'images' array exists as shown in the blog post
+        images_list = raw.get("images", [])
+        if images_list and isinstance(images_list, list):
+            for img in images_list:
+                url = img.get("imgUrl", "")
+                if url:
+                    if not url.startswith("http"):
+                        url = "https:" + url
+                    image_urls.append(url)
+                    
+        # Fallback to single image if array is empty
+        if not image_urls:
+            image_obj = raw.get("image", {})
+            image_url = image_obj.get("imgUrl", "") if isinstance(image_obj, dict) else str(raw.get("image", ""))
+            if image_url and not image_url.startswith("http"):
+                image_url = "https:" + image_url
+            if image_url:
+                image_urls.append(image_url)
             
         trade = raw.get("trade", {})
         orders_str = str(trade.get("tradeDesc", "0")).split(" ")[0]
@@ -109,7 +124,7 @@ class ScrapflyClient:
             "source_product_id": str(product_id),
             "title": title,
             "description": title,
-            "image_urls": [image_url] if image_url else [],
+            "image_urls": image_urls,
             "category": "",
             "source_price": price,
             "shipping_cost": 0.0,

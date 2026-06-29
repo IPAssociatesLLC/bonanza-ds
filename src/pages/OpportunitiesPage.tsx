@@ -435,12 +435,12 @@ export function OpportunitiesPage() {
         </Card>
       )}
 
-      {/* Detail Sheet */}
-      <Sheet open={detailId !== null} onOpenChange={(open) => !open && setDetailId(null)}>
-        <SheetContent className="w-full overflow-y-auto sm:max-w-[600px]">
-          <SheetHeader>
-            <SheetTitle>Opportunity Details</SheetTitle>
-          </SheetHeader>
+      {/* Detail Dialog */}
+      <Dialog open={detailId !== null} onOpenChange={(open) => !open && setDetailId(null)}>
+        <DialogContent className="w-full overflow-y-auto sm:max-w-[800px] max-h-[90vh]">
+          <DialogHeader>
+            <DialogTitle>Opportunity Details</DialogTitle>
+          </DialogHeader>
 
           {detailLoading && <LoadingSpinner text="Loading details..." />}
 
@@ -699,8 +699,8 @@ export function OpportunitiesPage() {
               </div>
             </div>
           )}
-        </SheetContent>
-      </Sheet>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
