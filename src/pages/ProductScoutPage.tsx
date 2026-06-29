@@ -44,11 +44,10 @@ export function ProductScoutPage() {
     "/api/opportunities?limit=12"
   )
 
-  const { data: detailOpp, loading: detailLoading } = useFetch<Opportunity>(
-    detailId !== null ? `/api/opportunities/${detailId}` : ""
-  )
-
   const opportunities = data?.items ?? []
+  
+  const detailOpp = opportunities.find(o => o.id === detailId) || null
+  const detailLoading = false
 
   async function handleStartScouting() {
     setScanning(true)
