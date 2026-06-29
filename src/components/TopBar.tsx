@@ -3,7 +3,7 @@ import { Search, Bell, Menu } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 
-export function TopBar() {
+export function TopBar({ onMenuClick }: { onMenuClick?: () => void }) {
   const [time, setTime] = useState(new Date())
 
   useEffect(() => {
@@ -12,9 +12,9 @@ export function TopBar() {
   }, [])
 
   return (
-    <header className="flex h-16 items-center justify-between border-b border-border bg-card/30 px-6 backdrop-blur-xl">
+    <header className="flex h-16 shrink-0 items-center justify-between border-b border-border bg-card/30 px-4 sm:px-6 backdrop-blur-xl">
       <div className="flex items-center gap-4 flex-1">
-        <Button variant="ghost" size="icon" className="lg:hidden">
+        <Button variant="ghost" size="icon" className="lg:hidden" onClick={onMenuClick}>
           <Menu className="h-5 w-5" />
         </Button>
         <div className="relative max-w-md flex-1">

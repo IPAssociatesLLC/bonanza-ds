@@ -63,9 +63,22 @@ const navGroups: NavGroup[] = [
   },
 ]
 
-export function Sidebar({ currentPath }: { currentPath: string }) {
+export function Sidebar({ currentPath, isOpen, setIsOpen }: { currentPath: string, isOpen?: boolean, setIsOpen?: (o: boolean) => void }) {
   return (
-    <aside className="flex w-64 flex-col border-r border-border bg-card/50 backdrop-blur-xl">
+    <>
+      {/* Mobile Overlay */}
+      {isOpen && setIsOpen && (
+        <div 
+          className="fixed inset-0 z-40 bg-background/80 backdrop-blur-sm lg:hidden"
+          onClick={() => setIsOpen(false)}
+        />
+      )}
+      
+      {/* Sidebar */}
+      <aside className={cn(
+        "fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-border bg-card/95 backdrop-blur-xl transition-transform lg:static lg:translate-x-0",
+        isOpen ? "translate-x-0" : "-translate-x-full"
+      )}>
       {/* Logo */}
       <div className="flex h-16 items-center gap-3 border-b border-border px-6">
         <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary">
@@ -80,7 +93,12 @@ export function Sidebar({ currentPath }: { currentPath: string }) {
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-4">
         {navGroups.map((group) => (
-          <NavGroup key={group.label} group={group} currentPath={currentPath} />
+          <NavGroup 
+            key={group.label} 
+            group={group} 
+            currentPath={currentPath} 
+            onLinkClick={() => setIsOpen?.(false)} 
+          />
         ))}
       </nav>
 
@@ -100,7 +118,7 @@ export function Sidebar({ currentPath }: { currentPath: string }) {
   )
 }
 
-function NavGroup({ group, currentPath }: { group: NavGroup; currentPath: string }) {
+function NavGroup({ group, currentPath, onLinkClick }: { group: NavGroup; currentPath: string; onLinkClick?: () => void }) {
   const [collapsed, setCollapsed] = useState(false)
   const hasActive = group.items.some(
     (item) => currentPath === item.path || (item.path !== "/" && currentPath.startsWith(item.path))
@@ -126,6 +144,7 @@ function NavGroup({ group, currentPath }: { group: NavGroup; currentPath: string
               <Link
                 key={item.path}
                 to={item.path}
+                onClick={onLinkClick}
                 className={cn(
                   "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                   isActive
