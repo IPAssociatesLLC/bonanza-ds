@@ -122,7 +122,7 @@ const tooltipStyle = {
 }
 
 function getStatusBadge(status: string) {
-  const variant = status === "active" ? "default" : status === "draft" ? "secondary" : "outline"
+  const variant = status === "listed" || status === "active" ? "default" : status === "draft" ? "secondary" : "outline"
   return <Badge variant={variant as "default" | "secondary" | "outline"}>{status}</Badge>
 }
 
@@ -145,7 +145,7 @@ export function AnalyticsPage() {
   const totalRevenue = revenueData.reduce((sum, d) => sum + d.revenue, 0)
   const totalProfit = revenueData.reduce((sum, d) => sum + d.profit, 0)
   const avgMargin = totalRevenue > 0 ? ((totalProfit / totalRevenue) * 100).toFixed(1) : "0"
-  const activeListings = listings?.filter((l) => l.status === "active").length ?? 0
+  const activeListings = listings?.filter((l) => l.status === "listed" || l.status === "active").length ?? 0
 
   return (
     <div>
