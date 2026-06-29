@@ -98,6 +98,7 @@ export function OpportunitiesPage() {
   const [categoryFilter, setCategoryFilter] = useState("")
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [detailId, setDetailId] = useState<number | null>(null)
+  const [selectedDialogImageIndex, setSelectedDialogImageIndex] = useState(0)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [importLoading, setImportLoading] = useState(false)
@@ -437,7 +438,7 @@ export function OpportunitiesPage() {
 
       {/* Detail Dialog */}
       <Dialog open={detailId !== null} onOpenChange={(open) => !open && setDetailId(null)}>
-        <DialogContent className="w-full overflow-y-auto sm:max-w-[800px] max-h-[90vh]">
+        <DialogContent className="w-full overflow-y-auto sm:max-w-[800px] max-h-[90vh] bg-white dark:bg-zinc-950 border border-border text-card-foreground shadow-xl sm:rounded-xl">
           <DialogHeader>
             <DialogTitle>Opportunity Details</DialogTitle>
           </DialogHeader>
@@ -446,20 +447,38 @@ export function OpportunitiesPage() {
 
           {!detailLoading && detailOpp && (
             <div className="space-y-5 px-4 pb-6">
-              {/* Images */}
+              {/* Image Gallery */}
               {detailOpp.image_urls && detailOpp.image_urls.length > 0 && (
-                <div className="flex gap-2 overflow-x-auto">
-                  {detailOpp.image_urls.slice(0, 4).map((url, i) => (
+                <div className="mb-4 flex flex-col sm:flex-row gap-4 h-[400px]">
+                  {/* Left: Thumbnails */}
+                  {detailOpp.image_urls.length > 1 && (
+                    <div className="flex flex-row sm:flex-col gap-2 overflow-auto sm:w-20 shrink-0">
+                      {detailOpp.image_urls.map((url, idx) => (
+                        <div key={idx} className="relative group shrink-0">
+                          <img
+                            src={url}
+                            alt={`Thumbnail ${idx + 1}`}
+                            className={`h-16 w-16 cursor-pointer rounded-md object-cover border-2 transition-all ${selectedDialogImageIndex === idx ? 'border-primary' : 'border-transparent hover:border-primary/50'}`}
+                            onClick={() => setSelectedDialogImageIndex(idx)}
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).style.display = "none"
+                            }}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {/* Right: Main Image */}
+                  <div className="flex-1 flex items-center justify-center rounded-lg bg-muted overflow-hidden border">
                     <img
-                      key={i}
-                      src={url}
-                      alt={`${detailOpp.title} ${i + 1}`}
-                      className="h-20 w-20 shrink-0 rounded-md object-cover"
+                      src={detailOpp.image_urls[selectedDialogImageIndex] || detailOpp.image_urls[0]}
+                      alt={detailOpp.title}
+                      className="h-full w-full object-contain"
                       onError={(e) => {
                         (e.target as HTMLImageElement).style.display = "none"
                       }}
                     />
-                  ))}
+                  </div>
                 </div>
               )}
 
@@ -486,28 +505,28 @@ export function OpportunitiesPage() {
               {/* Pricing */}
               <div>
                 <h4 className="mb-2 text-sm font-semibold text-foreground">Pricing & Profitability</h4>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-lg bg-muted/50 p-3">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  <div className="rounded-lg bg-muted/50 p-3 border border-border">
                     <p className="text-xs text-muted-foreground">Source Price</p>
                     <p className="text-lg font-bold text-foreground">{formatCurrency(detailOpp.source_price)}</p>
                   </div>
-                  <div className="rounded-lg bg-muted/50 p-3">
+                  <div className="rounded-lg bg-muted/50 p-3 border border-border">
                     <p className="text-xs text-muted-foreground">Shipping Cost</p>
                     <p className="text-lg font-bold text-foreground">{formatCurrency(detailOpp.shipping_cost)}</p>
                   </div>
-                  <div className="rounded-lg bg-muted/50 p-3">
+                  <div className="rounded-lg bg-muted/50 p-3 border border-border">
                     <p className="text-xs text-muted-foreground">Target Price</p>
                     <p className="text-lg font-bold text-foreground">{formatCurrency(detailOpp.target_price)}</p>
                   </div>
-                  <div className="rounded-lg bg-muted/50 p-3">
+                  <div className="rounded-lg bg-muted/50 p-3 border border-border">
                     <p className="text-xs text-muted-foreground">Margin</p>
                     <p className="text-lg font-bold text-green-500">{detailOpp.margin_pct.toFixed(1)}%</p>
                   </div>
-                  <div className="rounded-lg bg-muted/50 p-3">
+                  <div className="rounded-lg bg-muted/50 p-3 border border-border">
                     <p className="text-xs text-muted-foreground">Cashback ({detailOpp.cashback_rate}%)</p>
                     <p className="text-lg font-bold text-green-500">{formatCurrency(detailOpp.cashback_amount)}</p>
                   </div>
-                  <div className="rounded-lg bg-primary/10 p-3">
+                  <div className="rounded-lg bg-primary/10 p-3 border border-primary/20">
                     <p className="text-xs text-primary/80">Final Profit</p>
                     <p className="text-lg font-bold text-primary">{formatCurrency(detailOpp.final_profit)}</p>
                   </div>
