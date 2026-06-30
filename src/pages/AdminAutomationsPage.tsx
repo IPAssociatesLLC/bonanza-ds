@@ -69,7 +69,7 @@ export function AdminAutomationsPage() {
         algorithm: activeAlgorithm,
         max_credits: parseInt(maxCredits) || 50,
         min_margin_pct: parseFloat(targetMargin) || 30.0
-      })
+      }) as any
       setSuccess(`Successfully triggered scan engine! Scraped ${res.items_found || 0} potential items, generated ${res.opportunities_created || 0} opportunities using ${res.credits_used || 0} API credits.`)
       setActiveAlgorithm(null)
     } catch (e) {
