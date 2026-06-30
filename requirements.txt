@@ -1,7 +1,7 @@
 fastapi==0.135.1
 uvicorn==0.41.0
 httpx==0.28.1
-python-multipart==0.0.22
+python-multipart==0.0.23
 watchfiles==1.1.1
 sqlalchemy>=2.0.50
 psycopg2-binary>=2.9.12
