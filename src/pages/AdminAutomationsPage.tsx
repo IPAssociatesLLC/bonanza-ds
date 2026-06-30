@@ -4,9 +4,10 @@ import { PageHeader } from "@/components/PageParts"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
-import { Radar, Zap, TrendingUp, Gem, Save, Loader2, Settings, ShoppingBag, Globe } from "lucide-react"
+import { Radar, Zap, TrendingUp, Gem, Save, Loader2, Settings, ShoppingBag, Globe, Wrench } from "lucide-react"
 
 // Types for our automation state
 type AutomationSettings = {
@@ -80,6 +81,22 @@ export function AdminAutomationsPage() {
       isActive: true,
       isSaving: false,
       isRunning: false,
+    },
+    {
+      id: "custom_scout",
+      title: "Create Custom Product Scout",
+      description: "Build your own dynamic algorithm. Input custom URLs, target marketplaces, fee structures, and strict shipping rules.",
+      icon: Wrench,
+      color: "text-purple-500",
+      bg: "bg-purple-500/10",
+      targetUrls: "",
+      minMargin: "30",
+      bonanzaFee: "20",
+      paymentFee: "3",
+      maxCredits: "50",
+      isActive: true,
+      isSaving: false,
+      isRunning: false,
     }
   ])
 
@@ -147,7 +164,7 @@ export function AdminAutomationsPage() {
 
       <div className="mt-6 grid grid-cols-1 gap-8">
         {automations.map((algo) => (
-          <Card key={algo.id} className="flex flex-col border-border/50 shadow-sm overflow-hidden">
+          <Card key={algo.id} className="flex flex-col border-2 border-slate-300 dark:border-slate-700 bg-slate-100/50 dark:bg-slate-900/50 shadow-sm overflow-hidden">
             <CardHeader className="bg-muted/20 border-b border-border/40 pb-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -180,11 +197,13 @@ export function AdminAutomationsPage() {
                   <div className="space-y-4">
                     <div className="space-y-2">
                       <Label htmlFor={`urls-${algo.id}`}>Target Source URLs or Search Keywords</Label>
-                      <Input 
+                      <Textarea 
                         id={`urls-${algo.id}`}
+                        rows={6}
                         value={algo.targetUrls}
                         onChange={(e) => updateField(algo.id, "targetUrls", e.target.value)}
-                        placeholder="https://www.aliexpress.com/..."
+                        placeholder="https://www.aliexpress.com/...&#10;https://www.aliexpress.com/..."
+                        className="border-slate-400 dark:border-slate-600 resize-y"
                       />
                       <p className="text-[11px] text-muted-foreground">The scanner will pull items directly from these source locations.</p>
                     </div>
@@ -196,6 +215,7 @@ export function AdminAutomationsPage() {
                         type="number"
                         value={algo.maxCredits}
                         onChange={(e) => updateField(algo.id, "maxCredits", e.target.value)}
+                        className="border-slate-400 dark:border-slate-600"
                       />
                     </div>
                   </div>
@@ -219,6 +239,7 @@ export function AdminAutomationsPage() {
                           type="number"
                           value={algo.bonanzaFee}
                           onChange={(e) => updateField(algo.id, "bonanzaFee", e.target.value)}
+                          className="border-slate-400 dark:border-slate-600"
                         />
                       </div>
                       <div className="space-y-2">
@@ -228,6 +249,7 @@ export function AdminAutomationsPage() {
                           type="number"
                           value={algo.paymentFee}
                           onChange={(e) => updateField(algo.id, "paymentFee", e.target.value)}
+                          className="border-slate-400 dark:border-slate-600"
                         />
                       </div>
                     </div>
@@ -241,7 +263,7 @@ export function AdminAutomationsPage() {
                         type="number"
                         value={algo.minMargin}
                         onChange={(e) => updateField(algo.id, "minMargin", e.target.value)}
-                        className="border-primary/50 text-lg font-semibold"
+                        className="border-primary/50 text-lg font-semibold border-2"
                       />
                       <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
                         The backend strictly enforces this margin. It subtracts your fees from the competitive Google Shopping sell price. If an item yields less than a <strong>{algo.minMargin}%</strong> true profit margin, it is instantly ignored and deleted.
