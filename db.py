@@ -47,11 +47,29 @@ def init_db():
 
 # ─── Models ──────────────────────────────────────────────────────────────────
 
+class User(Base):
+    __tablename__ = "users"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String(50), unique=True, index=True, nullable=False)
+    hashed_password = Column(String(255), nullable=False)
+    role = Column(String(20), default="user") # 'admin' or 'user'
+    api_credit_limit = Column(Integer, default=50)
+    credits_used = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    scan_profiles = relationship("ScanProfile", back_populates="owner")
+    opportunities = relationship("Opportunity", back_populates="owner")
+    scan_logs = relationship("ScanLog", back_populates="owner")
+
 class ScanProfile(Base):
     __tablename__ = "scan_profiles"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     name = Column(String(200), nullable=False)
+    
+    owner = relationship("User", back_populates="scan_profiles")
     source = Column(String(50), nullable=False, default="aliexpress")  # aliexpress, walmart, amazon, ebay
     categories = Column(Text, default="")          # comma-separated
     min_price = Column(Float, default=0.0)
@@ -75,7 +93,10 @@ class Opportunity(Base):
     __tablename__ = "opportunities"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     scan_profile_id = Column(Integer, ForeignKey("scan_profiles.id"), nullable=True)
+    
+    owner = relationship("User", back_populates="opportunities")
 
     # Source product data
     source = Column(String(50), nullable=False)
@@ -181,7 +202,11 @@ class ScanLog(Base):
     __tablename__ = "scan_logs"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     scan_profile_id = Column(Integer, ForeignKey("scan_profiles.id"), nullable=True)
+    
+    owner = relationship("User", back_populates="scan_logs")
+    
     status = Column(String(30), default="running")  # running, completed, failed
     products_found = Column(Integer, default=0)
     opportunities_created = Column(Integer, default=0)
@@ -208,6 +233,25 @@ try:
             conn.rollback()
         try:
             conn.execute(text("ALTER TABLE opportunities ADD COLUMN discount_info TEXT DEFAULT ''"))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+
+        # Multi-Tenant migrations
+        try:
+            conn.execute(text("ALTER TABLE scan_profiles ADD COLUMN user_id INTEGER"))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+        
+        try:
+            conn.execute(text("ALTER TABLE opportunities ADD COLUMN user_id INTEGER"))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            
+        try:
+            conn.execute(text("ALTER TABLE scan_logs ADD COLUMN user_id INTEGER"))
             conn.commit()
         except Exception:
             conn.rollback()
