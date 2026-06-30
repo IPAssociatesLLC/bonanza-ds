@@ -38,6 +38,10 @@ class UserResponse(BaseModel):
     class Config:
         orm_mode = True
 
+class UserUpdate(BaseModel):
+    role: str
+    api_credit_limit: int
+
 # ─── Helper Functions ────────────────────────────────────────────────────────
 def get_password_hash(password: str) -> str:
     key = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), SALT, 100000)
@@ -117,3 +121,20 @@ def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db:
 @router.get("/me", response_model=UserResponse)
 def read_users_me(current_user: User = Depends(get_current_user)):
     return current_user
+
+# ─── Admin Endpoints ─────────────────────────────────────────────────────────
+@router.get("/users", response_model=list[UserResponse])
+def get_all_users(admin: User = Depends(get_current_active_admin), db: Session = Depends(get_db)):
+    return db.query(User).all()
+
+@router.put("/users/{user_id}", response_model=UserResponse)
+def update_user(user_id: int, update_data: UserUpdate, admin: User = Depends(get_current_active_admin), db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    user.role = update_data.role
+    user.api_credit_limit = update_data.api_credit_limit
+    db.commit()
+    db.refresh(user)
+    return user
