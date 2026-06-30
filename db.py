@@ -51,7 +51,7 @@ class User(Base):
     __tablename__ = "users"
     
     id = Column(Integer, primary_key=True, index=True)
-    username = Column(String(50), unique=True, index=True, nullable=False)
+    email = Column(String(120), unique=True, index=True, nullable=False)
     hashed_password = Column(String(255), nullable=False)
     role = Column(String(20), default="user") # 'admin' or 'user'
     api_credit_limit = Column(Integer, default=50)
@@ -255,6 +255,22 @@ try:
             conn.commit()
         except Exception:
             conn.rollback()
+            
+        # Migrate users table (Drop and recreate to transition username to email)
+        try:
+            # Check if email column exists, if not, drop table to recreate it
+            result = conn.execute(text("SELECT email FROM users LIMIT 1"))
+        except Exception:
+            conn.rollback()
+            try:
+                conn.execute(text("DROP TABLE users CASCADE"))
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                try:
+                    conn.execute(text("DROP TABLE users"))
+                    conn.commit()
+                except Exception:
+                    pass
 except Exception as e:
     print(f"Migration error ignored: {e}")
-

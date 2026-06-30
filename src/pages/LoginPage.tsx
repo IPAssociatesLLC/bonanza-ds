@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Store, Loader2 } from "lucide-react"
 
 export function LoginPage() {
-  const [username, setUsername] = useState("")
+  const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [isRegistering, setIsRegistering] = useState(false)
   const [error, setError] = useState("")
@@ -27,7 +27,7 @@ export function LoginPage() {
         const regRes = await fetch("/api/auth/register", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username, password })
+          body: JSON.stringify({ email, password })
         })
         if (!regRes.ok) {
           const errData = await regRes.json()
@@ -37,7 +37,7 @@ export function LoginPage() {
 
       // Login flow (using OAuth2 form data as required by FastAPI OAuth2PasswordBearer)
       const formData = new URLSearchParams()
-      formData.append("username", username)
+      formData.append("username", email)
       formData.append("password", password)
 
       const loginRes = await fetch("/api/auth/login", {
@@ -92,14 +92,15 @@ export function LoginPage() {
             )}
             
             <div className="space-y-2">
-              <Label htmlFor="username">Username</Label>
+              <Label htmlFor="email">Email Address</Label>
               <Input
-                id="username"
+                id="email"
+                type="email"
                 required
                 autoFocus
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="Enter your username"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
                 className="h-11"
               />
             </div>
@@ -133,7 +134,7 @@ export function LoginPage() {
                 onClick={() => {
                   setIsRegistering(!isRegistering)
                   setError("")
-                  setUsername("")
+                  setEmail("")
                   setPassword("")
                 }}
                 className="text-primary hover:underline font-medium"

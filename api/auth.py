@@ -23,7 +23,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7 # 7 days
 
 # ─── Pydantic Models ─────────────────────────────────────────────────────────
 class UserCreate(BaseModel):
-    username: str
+    email: str
     password: str
 
 class Token(BaseModel):
@@ -32,7 +32,7 @@ class Token(BaseModel):
 
 class UserResponse(BaseModel):
     id: int
-    username: str
+    email: str
     role: str
     api_credit_limit: int
     credits_used: int
@@ -96,11 +96,11 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
     if payload is None:
         raise credentials_exception
         
-    username: str = payload.get("sub")
-    if username is None:
+    email: str = payload.get("sub")
+    if email is None:
         raise credentials_exception
         
-    user = db.query(User).filter(User.username == username).first()
+    user = db.query(User).filter(User.email == email).first()
     if user is None:
         raise credentials_exception
     return user
@@ -114,9 +114,9 @@ async def get_current_active_admin(current_user: User = Depends(get_current_user
 @router.post("/register", response_model=UserResponse)
 def register(user: UserCreate, db: Session = Depends(get_db)):
     try:
-        db_user = db.query(User).filter(User.username == user.username).first()
+        db_user = db.query(User).filter(User.email == user.email).first()
         if db_user:
-            raise HTTPException(status_code=400, detail="Username already registered")
+            raise HTTPException(status_code=400, detail="Email already registered")
             
         # First user is automatically admin, others are user
         is_first_user = db.query(User).count() == 0
@@ -124,7 +124,7 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
         
         hashed_password = get_password_hash(user.password)
         new_user = User(
-            username=user.username,
+            email=user.email,
             hashed_password=hashed_password,
             role=role,
             api_credit_limit=50 if role == "user" else 99999
@@ -140,7 +140,7 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
 
 @router.post("/login", response_model=Token)
 def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.username == form_data.username).first()
+    user = db.query(User).filter(User.email == form_data.username).first()
     if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -149,7 +149,7 @@ def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db:
         )
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user.username, "role": user.role}, expires_delta=access_token_expires
+        data={"sub": user.email, "role": user.role}, expires_delta=access_token_expires
     )
     return {"access_token": access_token, "token_type": "bearer"}
 
