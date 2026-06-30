@@ -12,4 +12,3 @@ jmespath>=1.0.1
 parsel>=1.8.1
 loguru>=0.7.3
 PyJWT>=2.8.0
-passlib[bcrypt]>=1.7.4
