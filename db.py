@@ -188,3 +188,22 @@ class ScanLog(Base):
     error_message = Column(Text, default="")
     started_at = Column(DateTime, default=datetime.utcnow)
     completed_at = Column(DateTime, nullable=True)
+
+# ---- Auto Migration Hack for Vercel/Production ----
+try:
+    with engine.connect() as conn:
+        try:
+            conn.execute("ALTER TABLE opportunities ADD COLUMN google_high_price FLOAT DEFAULT 0.0")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE opportunities ADD COLUMN google_low_price FLOAT DEFAULT 0.0")
+        except Exception:
+            pass
+        try:
+            conn.execute("ALTER TABLE opportunities ADD COLUMN discount_info TEXT DEFAULT ''")
+        except Exception:
+            pass
+except Exception as e:
+    print(f"Migration error ignored: {e}")
+
