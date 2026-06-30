@@ -35,8 +35,7 @@ class UserResponse(BaseModel):
     api_credit_limit: int
     credits_used: int
     
-    class Config:
-        orm_mode = True
+    model_config = {"from_attributes": True}
 
 class UserUpdate(BaseModel):
     role: str
