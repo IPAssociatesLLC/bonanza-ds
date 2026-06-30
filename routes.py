@@ -328,13 +328,13 @@ def create_app(static_dir: str) -> FastAPI:
                 if profile.detect_out_of_stock and product["stock"] < profile.min_stock:
                     continue
 
-                # Calculate profitability
                 # Find best cashback rate for this source
                 cb_rate = _get_best_cashback_rate(db, product["source"])
-                target_price = suggest_target_price(
-                    product["source_price"], product["shipping_cost"],
-                    profile.bonanza_fee_pct, profile.min_margin_pct, cb_rate
-                )
+                
+                # Use the safe 1.45x markup formula for Automated scans until Google Ads is integrated
+                total_cost = product["source_price"] + product["shipping_cost"]
+                target_price = round(total_cost * 1.45, 2)
+                
                 metrics = calculate_profitability(
                     product["source_price"], product["shipping_cost"],
                     target_price, profile.bonanza_fee_pct, cb_rate
