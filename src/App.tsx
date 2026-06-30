@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate, Outlet } from "react"
+import { BrowserRouter, Routes, Route, Navigate, Outlet } from "react-router-dom"
 import { AuthProvider, useAuth } from "@/contexts/AuthContext"
 import { LoginPage } from "@/pages/LoginPage"
 import { Layout } from "@/components/Layout"
