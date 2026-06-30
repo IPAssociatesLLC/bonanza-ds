@@ -176,34 +176,36 @@ export function AdminPage() {
             {stats.recent_scans.length === 0 ? (
               <EmptyState title="No recent scans" />
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[60px]">ID</TableHead>
-                    <TableHead>Profile</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Products</TableHead>
-                    <TableHead className="text-right">Opps</TableHead>
-                    <TableHead>Started</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {stats.recent_scans.slice(0, 10).map((scan) => (
-                    <TableRow key={scan.id}>
-                      <TableCell className="font-mono text-xs text-muted-foreground">{scan.id}</TableCell>
-                      <TableCell className="font-mono text-xs">
-                        {scan.scan_profile_id !== null ? `#${scan.scan_profile_id}` : "—"}
-                      </TableCell>
-                      <TableCell>{statusToBadge(scan.status)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{scan.products_found}</TableCell>
-                      <TableCell className="text-right tabular-nums">{scan.opportunities_created}</TableCell>
-                      <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                        {formatDate(scan.started_at)}
-                      </TableCell>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[60px]">ID</TableHead>
+                      <TableHead>Profile</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Products</TableHead>
+                      <TableHead className="text-right">Opps</TableHead>
+                      <TableHead>Started</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {stats.recent_scans.slice(0, 10).map((scan) => (
+                      <TableRow key={scan.id}>
+                        <TableCell className="font-mono text-xs text-muted-foreground">{scan.id}</TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {scan.scan_profile_id !== null ? `#${scan.scan_profile_id}` : "—"}
+                        </TableCell>
+                        <TableCell>{statusToBadge(scan.status)}</TableCell>
+                        <TableCell className="text-right tabular-nums">{scan.products_found}</TableCell>
+                        <TableCell className="text-right tabular-nums">{scan.opportunities_created}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                          {formatDate(scan.started_at)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             )}
           </CardContent>
         </Card>

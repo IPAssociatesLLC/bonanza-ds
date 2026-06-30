@@ -175,7 +175,7 @@ export function ListingsPage() {
         title="Bonanza Listings"
         description="Manage your Bonanza marketplace listings"
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button variant="outline" onClick={handleTestConnection} disabled={testingConn}>
               {testingConn ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plug className="mr-2 h-4 w-4" />}
               Test Connection

@@ -319,7 +319,7 @@ export function ApiConnectionsPage() {
                 <ExternalLink className="h-3.5 w-3.5" />
                 Bonanza API Documentation
               </a>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 {bonanzaSaveError && <span className="text-xs text-destructive">{bonanzaSaveError}</span>}
                 {bonanzaSaved && <span className="text-xs text-green-500">Saved!</span>}
                 <Button size="sm" variant="outline" onClick={saveBonanzaSettings} disabled={bonanzaSaving}>
@@ -401,7 +401,7 @@ export function ApiConnectionsPage() {
                 <ExternalLink className="h-3.5 w-3.5" />
                 Scrapfly API Documentation
               </a>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 {scrapflySaveError && <span className="text-xs text-destructive">{scrapflySaveError}</span>}
                 {scrapflySaved && <span className="text-xs text-green-500">Saved!</span>}
                 <Button size="sm" variant="outline" onClick={saveScrapflySettings} disabled={scrapflySaving}>
