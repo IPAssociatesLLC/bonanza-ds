@@ -23,6 +23,8 @@ from profitability import (
     analyze_vendor_risk, suggest_optimal_price,
 )
 
+from api.auth import router as auth_router
+
 logger = logging.getLogger("bonanza_ds")
 logging.basicConfig(level=logging.INFO)
 
@@ -142,6 +144,7 @@ def create_app(static_dir: str) -> FastAPI:
         DB_INIT_ERROR = traceback.format_exc()
 
     api = APIRouter()
+    api.include_router(auth_router, prefix="/auth", tags=["Auth"])
 
     @api.get("/debug-db")
     def debug_db():
