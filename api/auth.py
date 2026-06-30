@@ -1,7 +1,9 @@
 from datetime import datetime, timedelta
 from typing import Optional
 import os
-import jwt
+import hmac
+import base64
+import json
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
@@ -51,9 +53,37 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
-    expire = datetime.utcnow() + (expires_delta if expires_delta else timedelta(minutes=15))
-    to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=15)
+    to_encode.update({"exp": int(expire.timestamp())})
+    
+    # Create standard JWT using only built-in libraries
+    header = base64.urlsafe_b64encode(json.dumps({"alg": ALGORITHM, "typ": "JWT"}).encode()).decode().rstrip("=")
+    payload = base64.urlsafe_b64encode(json.dumps(to_encode).encode()).decode().rstrip("=")
+    signature = base64.urlsafe_b64encode(hmac.new(SECRET_KEY.encode(), f"{header}.{payload}".encode(), hashlib.sha256).digest()).decode().rstrip("=")
+    return f"{header}.{payload}.{signature}"
+
+def decode_token(token: str):
+    try:
+        parts = token.split(".")
+        if len(parts) != 3: return None
+        header, payload, signature = parts
+        
+        # Verify signature
+        expected_sig = base64.urlsafe_b64encode(hmac.new(SECRET_KEY.encode(), f"{header}.{payload}".encode(), hashlib.sha256).digest()).decode().rstrip("=")
+        if not hmac.compare_digest(signature, expected_sig):
+            return None
+            
+        # Add padding back if needed
+        payload += "=" * ((4 - len(payload) % 4) % 4)
+        decoded = json.loads(base64.urlsafe_b64decode(payload).decode())
+        if decoded.get("exp", 0) < int(datetime.utcnow().timestamp()):
+            return None
+        return decoded
+    except Exception:
+        return None
 
 async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     credentials_exception = HTTPException(
@@ -61,12 +91,13 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
-        if username is None:
-            raise credentials_exception
-    except jwt.PyJWTError:
+    
+    payload = decode_token(token)
+    if payload is None:
+        raise credentials_exception
+        
+    username: str = payload.get("sub")
+    if username is None:
         raise credentials_exception
         
     user = db.query(User).filter(User.username == username).first()
@@ -82,25 +113,30 @@ async def get_current_active_admin(current_user: User = Depends(get_current_user
 # ─── Endpoints ───────────────────────────────────────────────────────────────
 @router.post("/register", response_model=UserResponse)
 def register(user: UserCreate, db: Session = Depends(get_db)):
-    db_user = db.query(User).filter(User.username == user.username).first()
-    if db_user:
-        raise HTTPException(status_code=400, detail="Username already registered")
+    try:
+        db_user = db.query(User).filter(User.username == user.username).first()
+        if db_user:
+            raise HTTPException(status_code=400, detail="Username already registered")
+            
+        # First user is automatically admin, others are user
+        is_first_user = db.query(User).count() == 0
+        role = "admin" if is_first_user else "user"
         
-    # First user is automatically admin, others are user
-    is_first_user = db.query(User).count() == 0
-    role = "admin" if is_first_user else "user"
-    
-    hashed_password = get_password_hash(user.password)
-    new_user = User(
-        username=user.username,
-        hashed_password=hashed_password,
-        role=role,
-        api_credit_limit=50 if role == "user" else 99999
-    )
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-    return new_user
+        hashed_password = get_password_hash(user.password)
+        new_user = User(
+            username=user.username,
+            hashed_password=hashed_password,
+            role=role,
+            api_credit_limit=50 if role == "user" else 99999
+        )
+        db.add(new_user)
+        db.commit()
+        db.refresh(new_user)
+        return new_user
+    except Exception as e:
+        import traceback
+        error_msg = str(e) + "\n" + traceback.format_exc()
+        raise HTTPException(status_code=500, detail=f"Registration failed: {error_msg}")
 
 @router.post("/login", response_model=Token)
 def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
