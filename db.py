@@ -195,20 +195,22 @@ from sqlalchemy import text
 try:
     with engine.connect() as conn:
         try:
+            # SQLite does not support IF NOT EXISTS for columns, but PostgreSQL does.
+            # We will use a safe approach by committing after each try to avoid broken transactions.
             conn.execute(text("ALTER TABLE opportunities ADD COLUMN google_high_price FLOAT DEFAULT 0.0"))
             conn.commit()
         except Exception:
-            pass
+            conn.rollback()
         try:
             conn.execute(text("ALTER TABLE opportunities ADD COLUMN google_low_price FLOAT DEFAULT 0.0"))
             conn.commit()
         except Exception:
-            pass
+            conn.rollback()
         try:
             conn.execute(text("ALTER TABLE opportunities ADD COLUMN discount_info TEXT DEFAULT ''"))
             conn.commit()
         except Exception:
-            pass
+            conn.rollback()
 except Exception as e:
     print(f"Migration error ignored: {e}")
 
