@@ -90,6 +90,9 @@ class Opportunity(Base):
     source_price = Column(Float, default=0.0)
     shipping_cost = Column(Float, default=0.0)
     target_price = Column(Float, default=0.0)       # Bonanza listing price
+    google_high_price = Column(Float, default=0.0)
+    google_low_price = Column(Float, default=0.0)
+    discount_info = Column(Text, default="")        # e.g., "50% off Daily Deal"
 
     # Metrics
     monthly_sales = Column(Integer, default=0)

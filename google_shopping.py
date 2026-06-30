@@ -5,19 +5,20 @@ from typing import Dict, Any, Optional
 
 logger = logging.getLogger("bonanza_ds.google_shopping")
 
-async def get_google_shopping_market_price(keyword: str) -> Optional[float]:
+async def get_google_shopping_market_price(keyword: str) -> Optional[Dict[str, float]]:
     """
-    Scrapes Google Shopping (via an API like SerpApi or Scrapfly) to find the competitive market price
-    for a given product keyword.
+    Scrapes Google Shopping to find the competitive market price range.
     
     Args:
         keyword: The product name or search term
         
     Returns:
-        The average or lowest competitive selling price on Google Shopping, or None if not found.
+        A dictionary with 'low_price' and 'high_price', or None if not found.
     """
     logger.info(f"Checking Google Shopping market price for: {keyword}")
     
-    # TODO: Integrate the specific tool/API the user provides here.
+    # TODO: Integrate the specific tool/API (e.g. Scrapfly, SerpApi) the user provides here.
     
+    # For now, until the API key and specific tool is provided, we simulate a response
+    # Returning None forces the scanner to skip the item since we can't verify its TRUE 40%+ margin.
     return None
