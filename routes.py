@@ -287,9 +287,7 @@ def create_app(static_dir: str) -> FastAPI:
         db.commit()
         db.refresh(scan_log)
 
-        # Delete old un-imported opportunities for this profile so only fresh results are shown
-        db.query(Opportunity).filter(Opportunity.scan_profile_id == profile.id, Opportunity.status != "imported").delete()
-        db.commit()
+        # Intentionally removed: do not delete old un-imported opportunities so the user can save/keep them.
 
         if not scrapfly_api_key:
             raise HTTPException(400, "Scrapfly API Key is not configured. Go to Settings -> API Connections.")
