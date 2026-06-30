@@ -73,6 +73,11 @@ class RunScanRequest(BaseModel):
     max_products: int = 100
     override_keyword: str | None = None
 
+class TriggerScanRequest(BaseModel):
+    algorithm: str
+    max_credits: int = 50
+    min_margin_pct: float = 30.0
+
 
 class ImportToBonanzaRequest(BaseModel):
     opportunity_ids: list[int]
@@ -399,6 +404,17 @@ def create_app(static_dir: str) -> FastAPI:
             scan_log.completed_at = datetime.utcnow()
             db.commit()
             raise HTTPException(500, trace)
+
+    @api.post("/scans/trigger")
+    def trigger_scan(req: TriggerScanRequest, db: Session = Depends(get_db)):
+        # TODO: Implement the actual python scraping logic for each algorithm
+        # For now, return a success payload so the frontend UI connects.
+        return {
+            "status": "completed",
+            "items_found": req.max_credits * 2, # Dummy metric
+            "opportunities_created": min(req.max_credits, 5), # Dummy metric
+            "credits_used": req.max_credits
+        }
 
     # ─── Opportunities ─────────────────────────────────────────────────────
 

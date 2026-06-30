@@ -24,7 +24,6 @@ const navGroups: NavGroup[] = [
     label: "Product Sourcing",
     items: [
       { label: "Product Scout", path: "/product-scout", icon: ScanSearch },
-      { label: "Scan Profiles", path: "/scan-profiles", icon: Radar },
       { label: "Scan Results", path: "/scan-results", icon: ScrollText },
     ],
   },
@@ -58,6 +57,7 @@ const navGroups: NavGroup[] = [
     label: "Administration",
     items: [
       { label: "Admin Dashboard", path: "/admin", icon: Shield },
+      { label: "Automations", path: "/admin/automations", icon: Radar },
       { label: "User Management", path: "/admin/users", icon: Users },
     ],
   },

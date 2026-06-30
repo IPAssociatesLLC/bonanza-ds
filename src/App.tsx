@@ -3,7 +3,7 @@ import { Layout } from "@/components/Layout"
 import { DashboardPage } from "@/pages/DashboardPage"
 import { AnalyticsPage } from "@/pages/AnalyticsPage"
 import { ProductScoutPage } from "@/pages/ProductScoutPage"
-import { ScanProfilesPage } from "@/pages/ScanProfilesPage"
+import { AdminAutomationsPage } from "@/pages/AdminAutomationsPage"
 import { ScanResultsPage } from "@/pages/ScanResultsPage"
 import { OpportunitiesPage } from "@/pages/OpportunitiesPage"
 import { ProfitCalculatorPage } from "@/pages/ProfitCalculatorPage"
@@ -27,7 +27,7 @@ function App() {
           <Route path="/" element={<DashboardPage />} />
           <Route path="/analytics" element={<AnalyticsPage />} />
           <Route path="/product-scout" element={<ProductScoutPage />} />
-          <Route path="/scan-profiles" element={<ScanProfilesPage />} />
+          <Route path="/admin/automations" element={<AdminAutomationsPage />} />
           <Route path="/scan-results" element={<ScanResultsPage />} />
           <Route path="/opportunities" element={<OpportunitiesPage />} />
           <Route path="/profit-calculator" element={<ProfitCalculatorPage />} />
