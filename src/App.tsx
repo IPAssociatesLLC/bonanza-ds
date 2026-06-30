@@ -1,4 +1,6 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom"
+import { BrowserRouter, Routes, Route, Navigate, Outlet } from "react"
+import { AuthProvider, useAuth } from "@/contexts/AuthContext"
+import { LoginPage } from "@/pages/LoginPage"
 import { Layout } from "@/components/Layout"
 import { DashboardPage } from "@/pages/DashboardPage"
 import { AnalyticsPage } from "@/pages/AnalyticsPage"
@@ -19,11 +21,29 @@ import { AccountPage } from "@/pages/AccountPage"
 import { AdminPage } from "@/pages/AdminPage"
 import { AdminUsersPage } from "@/pages/AdminUsersPage"
 
+function ProtectedRoute() {
+  const { user, isLoading } = useAuth()
+  
+  if (isLoading) {
+    return <div className="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-950">Loading...</div>
+  }
+  
+  if (!user) {
+    return <Navigate to="/login" replace />
+  }
+  
+  return <Outlet />
+}
+
 function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route element={<Layout />}>
+    <AuthProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          
+          <Route element={<ProtectedRoute />}>
+            <Route element={<Layout />}>
           <Route path="/" element={<DashboardPage />} />
           <Route path="/analytics" element={<AnalyticsPage />} />
           <Route path="/product-scout" element={<ProductScoutPage />} />
@@ -42,9 +62,11 @@ function App() {
           <Route path="/settings/account" element={<AccountPage />} />
           <Route path="/admin" element={<AdminPage />} />
           <Route path="/admin/users" element={<AdminUsersPage />} />
-        </Route>
-      </Routes>
-    </BrowserRouter>
+            </Route>
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </AuthProvider>
   )
 }
 

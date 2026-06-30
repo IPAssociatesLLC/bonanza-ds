@@ -18,7 +18,13 @@ export function useFetch<T>(url: string, options?: RequestInit): FetchState<T> {
   useEffect(() => {
     let cancelled = false
     setLoading(true)
-    fetch(url, options)
+    const token = localStorage.getItem("token")
+    const headers = new Headers(options?.headers)
+    if (token) {
+      headers.set("Authorization", `Bearer ${token}`)
+    }
+    
+    fetch(url, { ...options, headers })
       .then(async (r) => {
         if (!r.ok) {
           const err = await r.text()
@@ -46,9 +52,17 @@ export function useFetch<T>(url: string, options?: RequestInit): FetchState<T> {
 }
 
 export async function apiPost<T>(url: string, body: unknown): Promise<T> {
+  const token = localStorage.getItem("token")
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json"
+  }
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`
+  }
+  
   const resp = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify(body),
   })
   if (!resp.ok) {
@@ -59,9 +73,17 @@ export async function apiPost<T>(url: string, body: unknown): Promise<T> {
 }
 
 export async function apiPut<T>(url: string, body: unknown): Promise<T> {
+  const token = localStorage.getItem("token")
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json"
+  }
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`
+  }
+
   const resp = await fetch(url, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify(body),
   })
   if (!resp.ok) {
@@ -72,7 +94,16 @@ export async function apiPut<T>(url: string, body: unknown): Promise<T> {
 }
 
 export async function apiDelete<T>(url: string): Promise<T> {
-  const resp = await fetch(url, { method: "DELETE" })
+  const token = localStorage.getItem("token")
+  const headers: Record<string, string> = {}
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`
+  }
+
+  const resp = await fetch(url, {
+    method: "DELETE",
+    headers,
+  })
   if (!resp.ok) {
     const err = await resp.text()
     throw new Error(err || `HTTP ${resp.status}`)
