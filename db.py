@@ -189,19 +189,24 @@ class ScanLog(Base):
     started_at = Column(DateTime, default=datetime.utcnow)
     completed_at = Column(DateTime, nullable=True)
 
+from sqlalchemy import text
+
 # ---- Auto Migration Hack for Vercel/Production ----
 try:
     with engine.connect() as conn:
         try:
-            conn.execute("ALTER TABLE opportunities ADD COLUMN google_high_price FLOAT DEFAULT 0.0")
+            conn.execute(text("ALTER TABLE opportunities ADD COLUMN google_high_price FLOAT DEFAULT 0.0"))
+            conn.commit()
         except Exception:
             pass
         try:
-            conn.execute("ALTER TABLE opportunities ADD COLUMN google_low_price FLOAT DEFAULT 0.0")
+            conn.execute(text("ALTER TABLE opportunities ADD COLUMN google_low_price FLOAT DEFAULT 0.0"))
+            conn.commit()
         except Exception:
             pass
         try:
-            conn.execute("ALTER TABLE opportunities ADD COLUMN discount_info TEXT DEFAULT ''")
+            conn.execute(text("ALTER TABLE opportunities ADD COLUMN discount_info TEXT DEFAULT ''"))
+            conn.commit()
         except Exception:
             pass
 except Exception as e:
