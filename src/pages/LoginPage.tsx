@@ -133,6 +133,8 @@ export function LoginPage() {
                 onClick={() => {
                   setIsRegistering(!isRegistering)
                   setError("")
+                  setUsername("")
+                  setPassword("")
                 }}
                 className="text-primary hover:underline font-medium"
               >
