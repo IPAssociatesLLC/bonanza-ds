@@ -5,16 +5,17 @@ import jwt
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
-from passlib.context import CryptContext
+import hashlib
+import os as pyos
 from pydantic import BaseModel
 
 from db import get_db, User
 
 router = APIRouter()
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "super-secret-key-for-dev")
+SALT = pyos.environ.get("PWD_SALT", "static-salt-for-demo-purposes").encode()
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7 # 7 days
 
@@ -38,11 +39,12 @@ class UserResponse(BaseModel):
         orm_mode = True
 
 # ─── Helper Functions ────────────────────────────────────────────────────────
-def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
+def get_password_hash(password: str) -> str:
+    key = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), SALT, 100000)
+    return key.hex()
 
-def get_password_hash(password):
-    return pwd_context.hash(password)
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return get_password_hash(plain_password) == hashed_password
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
