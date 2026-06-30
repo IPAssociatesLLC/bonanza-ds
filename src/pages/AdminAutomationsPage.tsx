@@ -275,10 +275,10 @@ export function AdminAutomationsPage() {
               </div>
             </CardContent>
 
-            <CardFooter className="bg-muted/30 border-t pt-4 pb-4 flex justify-between items-center px-6">
+            <CardFooter className="bg-muted/30 border-t pt-4 pb-4 flex flex-col sm:flex-row justify-between items-center px-6 gap-4">
               <Button 
                 variant="outline" 
-                className="gap-2"
+                className="w-full sm:w-auto gap-2"
                 onClick={() => handleSaveRules(algo.id)}
                 disabled={algo.isSaving || algo.isRunning}
               >
@@ -288,7 +288,7 @@ export function AdminAutomationsPage() {
               
               <Button 
                 variant="default"
-                className="gap-2 px-6"
+                className="w-full sm:w-auto gap-2 px-6"
                 onClick={() => handleRunScan(algo)}
                 disabled={algo.isSaving || algo.isRunning}
               >
