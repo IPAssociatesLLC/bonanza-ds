@@ -6,6 +6,7 @@ import {
   Plug, Percent, UserCog, Shield, Users, TrendingUp, ChevronDown,
 } from "lucide-react"
 import { useState } from "react"
+import { useAuth } from "@/contexts/AuthContext"
 
 interface NavGroup {
   label: string
@@ -64,6 +65,15 @@ const navGroups: NavGroup[] = [
 ]
 
 export function Sidebar({ currentPath, isOpen, setIsOpen }: { currentPath: string, isOpen?: boolean, setIsOpen?: (o: boolean) => void }) {
+  const { user } = useAuth()
+  
+  // Filter nav groups based on user role
+  const visibleNavGroups = navGroups.filter(group => {
+    if (group.label === "Administration" && user?.role !== "admin") return false;
+    if (group.label === "System" && user?.role !== "admin") return false;
+    return true;
+  });
+
   return (
     <>
       {/* Mobile Overlay */}
@@ -92,7 +102,7 @@ export function Sidebar({ currentPath, isOpen, setIsOpen }: { currentPath: strin
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-4">
-        {navGroups.map((group) => (
+        {visibleNavGroups.map((group) => (
           <NavGroup 
             key={group.label} 
             group={group} 
