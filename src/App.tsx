@@ -20,6 +20,7 @@ import { PricingRulesPage } from "@/pages/PricingRulesPage"
 import { AccountPage } from "@/pages/AccountPage"
 import { AdminPage } from "@/pages/AdminPage"
 import { AdminUsersPage } from "@/pages/AdminUsersPage"
+import { AdminAiScoutPage } from "@/pages/AdminAiScoutPage"
 
 function ProtectedRoute() {
   const { user, isLoading } = useAuth()
@@ -62,6 +63,7 @@ function App() {
           <Route path="/settings/account" element={<AccountPage />} />
           <Route path="/admin" element={<AdminPage />} />
           <Route path="/admin/users" element={<AdminUsersPage />} />
+          <Route path="/admin/ai-scout" element={<AdminAiScoutPage />} />
             </Route>
           </Route>
         </Routes>

@@ -3,7 +3,7 @@ import { Link } from "react-router-dom"
 import {
   LayoutDashboard, ScanSearch, Radar, Target, Calculator,
   DollarSign, Package, Store, FileEdit, Rss, BarChart3, ScrollText,
-  Plug, Percent, UserCog, Shield, Users, TrendingUp, ChevronDown,
+  Plug, Percent, UserCog, Shield, Users, TrendingUp, ChevronDown, Bot
 } from "lucide-react"
 import { useState } from "react"
 import { useAuth } from "@/contexts/AuthContext"
@@ -58,6 +58,7 @@ const navGroups: NavGroup[] = [
     label: "Administration",
     items: [
       { label: "Admin Dashboard", path: "/admin", icon: Shield },
+      { label: "AI Scout Swarm", path: "/admin/ai-scout", icon: Bot },
       { label: "Automations", path: "/admin/automations", icon: Radar },
       { label: "User Management", path: "/admin/users", icon: Users },
     ],
