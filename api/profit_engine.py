@@ -1,6 +1,11 @@
 import json
 import logging
 from typing import Dict, Any, List, Optional
+
+# Use relative or sys.path compliant import for Vercel
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from api.google_scraper import search_google_shopping
 
 logger = logging.getLogger("bonanza_ds.profit_engine")
