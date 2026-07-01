@@ -20,8 +20,11 @@ type AutomationSettings = {
   // Form fields
   targetUrls: string
   minMargin: string
+  minSearchVolume: string
   bonanzaFee: string
   paymentFee: string
+  assumedCtr: string
+  assumedConversion: string
   maxCredits: string
   isActive: boolean
   isSaving: boolean
@@ -43,8 +46,11 @@ export function AdminAutomationsPage() {
       bg: "bg-yellow-500/10",
       targetUrls: "https://www.aliexpress.com/w/wholesale-surfboard.html",
       minMargin: "40",
+      minSearchVolume: "500",
       bonanzaFee: "20",
       paymentFee: "3",
+      assumedCtr: "2.0",
+      assumedConversion: "3.0",
       maxCredits: "50",
       isActive: true,
       isSaving: false,
@@ -59,8 +65,11 @@ export function AdminAutomationsPage() {
       bg: "bg-blue-500/10",
       targetUrls: "https://www.google.com/shopping",
       minMargin: "45",
+      minSearchVolume: "1000",
       bonanzaFee: "20",
       paymentFee: "3",
+      assumedCtr: "2.0",
+      assumedConversion: "3.0",
       maxCredits: "50",
       isActive: true,
       isSaving: false,
@@ -75,8 +84,11 @@ export function AdminAutomationsPage() {
       bg: "bg-emerald-500/10",
       targetUrls: "https://www.aliexpress.com/w/wholesale-refurbished-electronics.html",
       minMargin: "50",
+      minSearchVolume: "300",
       bonanzaFee: "20",
       paymentFee: "3",
+      assumedCtr: "2.0",
+      assumedConversion: "3.0",
       maxCredits: "100",
       isActive: true,
       isSaving: false,
@@ -91,8 +103,11 @@ export function AdminAutomationsPage() {
       bg: "bg-purple-500/10",
       targetUrls: "",
       minMargin: "30",
+      minSearchVolume: "500",
       bonanzaFee: "20",
       paymentFee: "3",
+      assumedCtr: "2.0",
+      assumedConversion: "3.0",
       maxCredits: "50",
       isActive: true,
       isSaving: false,
@@ -219,6 +234,42 @@ export function AdminAutomationsPage() {
                       />
                     </div>
                   </div>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor={`ctr-${algo.id}`}>Assumed CTR (%)</Label>
+                      <Input 
+                        id={`ctr-${algo.id}`}
+                        type="number" 
+                        step="0.1"
+                        value={algo.assumedCtr}
+                        onChange={(e) => updateField(algo.id, "assumedCtr", e.target.value)}
+                        className="font-mono"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor={`search-vol-${algo.id}`}>Minimum Monthly Search Volume</Label>
+                      <Input 
+                        id={`search-vol-${algo.id}`}
+                        type="number" 
+                        value={algo.minSearchVolume}
+                        onChange={(e) => updateField(algo.id, "minSearchVolume", e.target.value)}
+                        placeholder="e.g. 500"
+                        className="font-mono"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2 mt-4">
+                    <Label htmlFor={`conv-${algo.id}`}>Assumed Conversion (%)</Label>
+                    <Input 
+                      id={`conv-${algo.id}`}
+                      type="number" 
+                      step="0.1"
+                      value={algo.assumedConversion}
+                      onChange={(e) => updateField(algo.id, "assumedConversion", e.target.value)}
+                      className="font-mono"
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -257,7 +308,7 @@ export function AdminAutomationsPage() {
                     <Separator className="my-2" />
 
                     <div className="space-y-2">
-                      <Label htmlFor={`margin-${algo.id}`} className="text-primary font-bold">Strict Minimum True Profit Margin (%)</Label>
+                      <Label htmlFor={`margin-${algo.id}`} className="text-primary font-bold">Min Required Markup Over Buy Price (%)</Label>
                       <Input 
                         id={`margin-${algo.id}`}
                         type="number"
