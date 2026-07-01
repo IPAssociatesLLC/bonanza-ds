@@ -440,7 +440,7 @@ def create_app(static_dir: str) -> FastAPI:
         offset: int = 0,
         db: Session = Depends(get_db),
     ):
-        q = db.query(Opportunity)
+        q = db.query(Opportunity).filter(Opportunity.origin == 'automation_engine')
         if status:
             q = q.filter(Opportunity.status == status)
         if source:
@@ -449,6 +449,26 @@ def create_app(static_dir: str) -> FastAPI:
             q = q.filter(Opportunity.margin_pct >= min_margin)
         if category:
             q = q.filter(Opportunity.category.ilike(f"%{category}%"))
+        total = q.count()
+        items = q.order_by(desc(Opportunity.margin_pct)).offset(offset).limit(limit).all()
+        return {"items": [_opp_dict(o) for o in items], "total": total}
+
+    @api.get("/scan-results")
+    def list_scan_results(
+        status: str | None = None,
+        source: str | None = None,
+        min_margin: float | None = None,
+        limit: int = 100,
+        offset: int = 0,
+        db: Session = Depends(get_db),
+    ):
+        q = db.query(Opportunity).filter(Opportunity.origin == 'manual_scout')
+        if status:
+            q = q.filter(Opportunity.status == status)
+        if source:
+            q = q.filter(Opportunity.source == source)
+        if min_margin is not None:
+            q = q.filter(Opportunity.margin_pct >= min_margin)
         total = q.count()
         items = q.order_by(desc(Opportunity.margin_pct)).offset(offset).limit(limit).all()
         return {"items": [_opp_dict(o) for o in items], "total": total}

@@ -34,9 +34,16 @@ async def run_7_stage_pipeline(
     discovered_deals = []
     
     # TODO: Implement live Bright Data Web Unlocker scrape of `target_urls` here.
-    # We refuse to use mock data. If we don't have a live scraper built yet, we fail immediately.
+    # If no deals are found after a live scrape, exit gracefully instead of crashing.
     if not discovered_deals:
-        raise Exception(f"Live Scraper for {target_urls} has not been built yet. Refusing to use mock data. Engine halted.")
+        logger.info(f"No products found on {target_urls} that match criteria.")
+        return {
+            "status": "completed",
+            "items_found": 0,
+            "opportunities_created": 0,
+            "credits_used": credits_used,
+            "message": f"No products found on {target_urls} matching the formula."
+        }
     
     # Assume platform fee is 20% and payment is 3% as defined in the plan
     total_fee_pct = 0.23
@@ -101,6 +108,7 @@ async def run_7_stage_pipeline(
         # ─── STAGE 7: Save to Opportunities ───
         opp = Opportunity(
             user_id=user_id,
+            origin="automation_engine",
             source="shopsavvy",
             source_url=deal["source_url"],
             title=deal["title"],

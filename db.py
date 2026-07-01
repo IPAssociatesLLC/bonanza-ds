@@ -95,6 +95,7 @@ class Opportunity(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     scan_profile_id = Column(Integer, ForeignKey("scan_profiles.id"), nullable=True)
+    origin = Column(String(50), default="manual_scout") # 'manual_scout' or 'automation_engine'
     
     owner = relationship("User", back_populates="opportunities")
 
