@@ -44,7 +44,7 @@ export function AdminAutomationsPage() {
       icon: Zap,
       color: "text-yellow-500",
       bg: "bg-yellow-500/10",
-      targetUrls: "https://www.aliexpress.com/w/wholesale-surfboard.html",
+      targetUrls: "https://shopsavvy.com/deals\nhttps://price.com/deals\nhttps://topcashback.com",
       minMargin: "40",
       minSearchVolume: "500",
       bonanzaFee: "20",

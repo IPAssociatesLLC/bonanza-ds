@@ -165,8 +165,9 @@ Requirements:
 
 def analyze_vendor_risk(product_data: dict) -> dict:
     """Use AI to summarize vendor quality and risk."""
-    client = _get_gemini_client()
-    prompt = f"""Analyze this AliExpress vendor for drop-shipping risk. Return a JSON object.
+    try:
+        client = _get_gemini_client()
+        prompt = f"""Analyze this AliExpress vendor for drop-shipping risk. Return a JSON object.
 
 Vendor data:
 - Seller: {product_data.get('seller_name', '')}
@@ -179,14 +180,13 @@ Vendor data:
 
 Return JSON with keys: risk_level (low/medium/high), summary (1-2 sentences), recommendation (proceed/caution/avoid)"""
 
-    response = client.models.generate_content(
-        model="gemini-3-flash-preview",
-        contents=prompt,
-    )
-    try:
+        response = client.models.generate_content(
+            model="gemini-3-flash-preview",
+            contents=prompt,
+        )
         return json.loads(response.text.strip().strip("```json").strip("```"))
-    except (json.JSONDecodeError, ValueError):
-        return {"risk_level": "unknown", "summary": "Unable to analyze", "recommendation": "caution"}
+    except Exception as e:
+        return {"risk_level": "unknown", "summary": f"Unable to analyze vendor risk. Please check your API key.", "recommendation": "caution"}
 
 
 def suggest_optimal_price(product_data: dict, source_price: float, shipping_cost: float, bonanza_fee_pct: float = 20.0) -> float:
