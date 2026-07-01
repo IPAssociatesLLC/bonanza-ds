@@ -147,7 +147,11 @@ export function AdminAutomationsPage() {
       const res = await apiPost("/api/scans/trigger", {
         algorithm: automation.id,
         max_credits: parseInt(automation.maxCredits) || 50,
-        min_margin_pct: parseFloat(automation.minMargin) || 40.0
+        min_margin_pct: parseFloat(automation.minMargin) || 40.0,
+        min_search_volume: parseInt(automation.minSearchVolume) || 500,
+        assumed_ctr: parseFloat(automation.assumedCtr) || 2.0,
+        assumed_conversion: parseFloat(automation.assumedConversion) || 3.0,
+        target_urls: automation.targetUrls
       }) as Record<string, unknown>
       
       setSuccess(`Successfully triggered background scanner! Generated ${res.opportunities_created || 0} opportunities using ${res.credits_used || 0} API credits.`)

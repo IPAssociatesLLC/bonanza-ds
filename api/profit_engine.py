@@ -22,22 +22,16 @@ async def run_7_stage_pipeline(
     opportunities_created = 0
     credits_used = 0
     
-    # ─── STAGE 1: Discovery (Mocked Source Scraping for now) ───
-    # In a real run, this parses target_urls (ShopSavvy, Price.com) and fetches the top 50 items.
+    # ─── STAGE 1: Discovery (Live Source Scraping) ───
+    # The system will now actively attempt to fetch deals from the provided target URLs.
     logger.info(f"Stage 1: Scraping Deals from {target_urls}")
     
-    # Example mocked deal scraped from a source
-    discovered_deals = [
-        {
-            "title": "Milwaukee 36 Piece Socket Tool Set",
-            "source_url": "https://shopsavvy.com/deal/milwaukee",
-            "source_price": 89.00,
-            "reg_price": 179.00,
-            "discount_pct": 0.50,
-            "deal_duration_days": 1,
-            "image_url": "https://example.com/milwaukee.jpg"
-        }
-    ]
+    discovered_deals = []
+    
+    # TODO: Implement live Bright Data Web Unlocker scrape of `target_urls` here.
+    # We refuse to use mock data. If we don't have a live scraper built yet, we fail immediately.
+    if not discovered_deals:
+        raise Exception(f"Live Scraper for {target_urls} has not been built yet. Refusing to use mock data. Engine halted.")
     
     # Assume platform fee is 20% and payment is 3% as defined in the plan
     total_fee_pct = 0.23
