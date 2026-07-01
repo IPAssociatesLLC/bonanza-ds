@@ -7,11 +7,9 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import sessionmaker, declarative_base, relationship
 
-# Neon DB (cloud) or local SQLite fallback
+# Cloud Postgres (Supabase) or local SQLite fallback
 _db_url = (
-    os.environ.get("DBC7673568_DATABASE_URL")
-    or os.environ.get("DB0160F1E6_DATABASE_URL")
-    or os.environ.get("DATABASE_URL")
+    os.environ.get("DATABASE_URL")
     or "sqlite:///./bonanza_ds.db"
 )
 
