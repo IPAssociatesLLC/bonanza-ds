@@ -111,15 +111,20 @@ class Opportunity(Base):
     source_price = Column(Float, default=0.0)
     shipping_cost = Column(Float, default=0.0)
     target_price = Column(Float, default=0.0)       # Bonanza listing price
+    required_sell_price = Column(Float, default=0.0) # From Stage 3
     google_high_price = Column(Float, default=0.0)
     google_low_price = Column(Float, default=0.0)
-    discount_info = Column(Text, default="")        # e.g., "50% off Daily Deal"
+    google_avg_price = Column(Float, default=0.0)
+    discount_pct = Column(Float, default=0.0)
+    deal_duration_days = Column(Integer, default=1)
 
     # Metrics
     monthly_sales = Column(Integer, default=0)
+    monthly_search_volume = Column(Integer, default=0) # Google search vol
     rating = Column(Float, default=0.0)
     review_count = Column(Integer, default=0)
     stock = Column(Integer, default=0)
+    seller_count = Column(Integer, default=1)       # Google Shopping competitors
     seller_name = Column(String(300), default="")
     seller_rating = Column(Float, default=0.0)
     seller_years = Column(Float, default=0.0)
@@ -128,8 +133,12 @@ class Opportunity(Base):
     margin_pct = Column(Float, default=0.0)         # before cashback
     cashback_rate = Column(Float, default=0.0)
     cashback_amount = Column(Float, default=0.0)
-    final_profit = Column(Float, default=0.0)       # after cashback
-    final_margin_pct = Column(Float, default=0.0)
+    final_profit = Column(Float, default=0.0)       # Net Profit Dollar
+    final_margin_pct = Column(Float, default=0.0)   # Net Profit Margin (True Margin)
+    actual_markup_pct = Column(Float, default=0.0)
+    est_monthly_sales = Column(Float, default=0.0)
+    est_sales_for_window = Column(Float, default=0.0)
+    est_income = Column(Float, default=0.0)
 
     # Cashback
     best_cashback_site = Column(String(200), default="")
@@ -170,6 +179,30 @@ class Listing(Base):
 
     status = Column(String(30), default="pending")  # pending, listed, failed, updated
     bonanza_response = Column(Text, default="")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Order(Base):
+    __tablename__ = "orders"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    listing_id = Column(Integer, ForeignKey("listings.id"), nullable=True)
+    
+    bonanza_order_id = Column(String(100), nullable=False, unique=True)
+    customer_name = Column(String(200), default="")
+    shipping_address = Column(Text, default="")
+    status = Column(String(50), default="new") # new, ordered_from_source, shipped, delivered, cancelled
+    
+    sale_price = Column(Float, default=0.0)
+    source_buy_price = Column(Float, default=0.0)
+    net_profit = Column(Float, default=0.0)
+    
+    source_order_id = Column(String(100), default="") # Order ID from AliExpress/Source
+    tracking_number = Column(String(100), default="")
+    carrier = Column(String(50), default="")
+    
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow)
 

@@ -23,6 +23,7 @@ from profitability import (
     analyze_vendor_risk, suggest_optimal_price,
 )
 
+from api.profit_engine import run_7_stage_pipeline
 from api.auth import router as auth_router
 
 logger = logging.getLogger("bonanza_ds")
@@ -79,6 +80,10 @@ class TriggerScanRequest(BaseModel):
     algorithm: str
     max_credits: int = 50
     min_margin_pct: float = 30.0
+    min_search_volume: int = 500
+    assumed_ctr: float = 2.0
+    assumed_conversion: float = 3.0
+    target_urls: str = ""
 
 
 class ImportToBonanzaRequest(BaseModel):
@@ -408,15 +413,20 @@ def create_app(static_dir: str) -> FastAPI:
             raise HTTPException(500, trace)
 
     @api.post("/scans/trigger")
-    def trigger_scan(req: TriggerScanRequest, db: Session = Depends(get_db)):
-        # TODO: Implement the actual python scraping logic for each algorithm
-        # For now, return a success payload so the frontend UI connects.
-        return {
-            "status": "completed",
-            "items_found": req.max_credits * 2, # Dummy metric
-            "opportunities_created": min(req.max_credits, 5), # Dummy metric
-            "credits_used": req.max_credits
-        }
+    async def trigger_scan(req: TriggerScanRequest, db: Session = Depends(get_db)):
+        # Execute the 7-stage math engine
+        res = await run_7_stage_pipeline(
+            db=db,
+            user_id=1, # Admin user ID for now
+            algorithm=req.algorithm,
+            target_urls=req.target_urls,
+            min_margin_pct=req.min_margin_pct,
+            min_search_volume=req.min_search_volume,
+            assumed_ctr=req.assumed_ctr,
+            assumed_conversion=req.assumed_conversion,
+            max_credits=req.max_credits
+        )
+        return res
 
     # ─── Opportunities ─────────────────────────────────────────────────────
 
