@@ -146,7 +146,7 @@ export function AdminAiScoutPage() {
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 mt-4 pb-6 items-stretch">
         
         {/* LEFT PANEL: Custom Configuration Form */}
-        <div className="col-span-1 lg:col-span-4 flex flex-col h-full">
+        <div className="col-span-1 lg:col-span-4 flex flex-col h-full lg:max-h-[850px]">
           {/* Changed background from slate-100/50 to slate-200 for darker contrast against page */}
           <Card className="flex flex-col h-full border-2 border-slate-300 dark:border-slate-700 bg-slate-200 dark:bg-slate-800 shadow-sm">
             <CardHeader className="bg-muted/30 border-b border-border/40 pb-4">
@@ -204,7 +204,7 @@ export function AdminAiScoutPage() {
         </div>
 
         {/* MIDDLE PANEL: Command Center (AI Chat) */}
-        <div className="col-span-1 lg:col-span-4 flex flex-col h-full max-h-[800px]">
+        <div className="col-span-1 lg:col-span-4 flex flex-col h-full lg:max-h-[850px]">
           <Card className="flex flex-col h-full border-2 border-slate-300 dark:border-slate-700 bg-slate-200 dark:bg-slate-800 shadow-sm overflow-hidden">
             <CardHeader className="bg-muted/30 border-b border-border/40 pb-4 shrink-0">
               <CardTitle className="text-xl flex items-center gap-2">
