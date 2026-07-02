@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { cn } from "@/lib/utils"
-
+import { apiPost } from "@/hooks/useFetch"
 // Mock results matching the highly detailed math and fields requested
 const MOCK_RESULTS = [
   {
@@ -119,16 +119,30 @@ export function AdminAiScoutPage() {
     }, 2000)
   }
 
-  const handleChatSend = (e: React.FormEvent) => {
+  const handleChatSend = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!chatInput.trim()) return
     const msg = chatInput
     setChatInput("")
-    setMessages(prev => [...prev, { id: Date.now().toString(), role: "user", content: msg }])
     
-    setTimeout(() => {
-      setMessages(prev => [...prev, { id: Date.now().toString(), role: "ai", content: "Acknowledged. I will prioritize deals with search volume > " + minSearchVolume + "." }])
-    }, 1000)
+    const newMessages = [...messages, { id: Date.now().toString(), role: "user" as const, content: msg }]
+    setMessages(newMessages)
+    
+    try {
+      const res = await apiPost("/api/scout/chat", {
+        targetUrls,
+        minMargin,
+        minSearchVolume,
+        maxDealDuration,
+        cashbackSites,
+        minCashbackRate,
+        messages: newMessages
+      }) as { response: string }
+      
+      setMessages(prev => [...prev, { id: Date.now().toString(), role: "ai", content: res.response }])
+    } catch (err) {
+      setMessages(prev => [...prev, { id: Date.now().toString(), role: "system", content: "Error connecting to AI Swarm Backend." }])
+    }
   }
 
   const handlePriceChange = (id: number, val: string) => {

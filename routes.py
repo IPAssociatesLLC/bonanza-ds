@@ -25,6 +25,7 @@ from profitability import (
 
 from api.profit_engine import run_7_stage_pipeline
 from api.auth import router as auth_router
+from api.ai_swarm import swarm_router
 
 logger = logging.getLogger("bonanza_ds")
 logging.basicConfig(level=logging.INFO)
@@ -150,6 +151,7 @@ def create_app(static_dir: str) -> FastAPI:
 
     api = APIRouter()
     api.include_router(auth_router, prefix="/auth", tags=["Auth"])
+    api.include_router(swarm_router, prefix="/scout", tags=["Scout"])
 
     @api.get("/debug-db")
     def debug_db():
