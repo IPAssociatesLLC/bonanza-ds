@@ -437,7 +437,7 @@ export function ProductScoutPage() {
                   {actionLoading === `save-${detailOpp.id}` ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   ) : (
-                    "Save to Opportunities"
+                    "Import to Bonanza"
                   )}
                 </Button>
               </div>

@@ -327,15 +327,15 @@ def create_app(static_dir: str) -> FastAPI:
                 # except Exception as ex:
                 #     logger.warning("Error filtering Chinese text from images: %s", ex)
 
-                # Apply profile filters
-                if product["source_price"] < profile.min_price or product["source_price"] > profile.max_price:
-                    continue
-                if product["monthly_sales"] < profile.min_monthly_sales:
-                    continue
-                if product["rating"] < profile.min_rating:
-                    continue
-                if profile.detect_out_of_stock and product["stock"] < profile.min_stock:
-                    continue
+                # Apply profile filters (Temporarily disabled for manual scan to show all results)
+                # if product["source_price"] < profile.min_price or product["source_price"] > profile.max_price:
+                #     continue
+                # if product["monthly_sales"] < profile.min_monthly_sales:
+                #     continue
+                # if product["rating"] < profile.min_rating:
+                #     continue
+                # if profile.detect_out_of_stock and product["stock"] < profile.min_stock:
+                #     continue
 
                 # Find best cashback rate for this source
                 cb_rate = _get_best_cashback_rate(db, product["source"])
@@ -350,8 +350,8 @@ def create_app(static_dir: str) -> FastAPI:
                     target_price, profile.bonanza_fee_pct, cb_rate
                 )
 
-                if not is_profitable(metrics, profile.min_margin_pct):
-                    continue
+                # if not is_profitable(metrics, profile.min_margin_pct):
+                #     continue
 
                 # Find best cashback site
                 best_cb = _get_best_cashback_site(db, product["source"])
