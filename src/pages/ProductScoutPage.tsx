@@ -43,7 +43,7 @@ export function ProductScoutPage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null)
 
   const { data, loading, error, refetch } = useFetch<OpportunitiesResponse>(
-    "/api/opportunities?limit=12"
+    "/api/scan-results?limit=12"
   )
 
   const opportunities = data?.items ?? []

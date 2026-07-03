@@ -257,7 +257,7 @@ def create_app(static_dir: str) -> FastAPI:
     # ─── Run Scan ──────────────────────────────────────────────────────────
 
     @api.post("/run-scan")
-    def run_scan(req: RunScanRequest, db: Session = Depends(get_db)):
+    async def run_scan(req: RunScanRequest, db: Session = Depends(get_db)):
         """Trigger an AliExpress scan for the given profile and search keywords."""
         profile = db.query(ScanProfile).filter(ScanProfile.id == req.profile_id).first()
         if not profile:
@@ -304,7 +304,6 @@ def create_app(static_dir: str) -> FastAPI:
 
         try:
             import os
-            import asyncio
             os.environ["SCRAPFLY_KEY"] = scrapfly_api_key
             from aliexpress_scraper.aliexpress import scrape_search
 
@@ -315,7 +314,7 @@ def create_app(static_dir: str) -> FastAPI:
                 keyword = [k.strip() for k in keywords.split(",") if k.strip()][0] if keywords else "surfboard"
             url = f"https://www.aliexpress.com/w/wholesale-{keyword}.html"
             
-            raw_products = asyncio.run(scrape_search(url, max_pages=3))
+            raw_products = await scrape_search(url, max_pages=3)
 
             opportunities_created = 0
             for raw in raw_products[:req.max_products]:
@@ -358,6 +357,7 @@ def create_app(static_dir: str) -> FastAPI:
                 best_cb = _get_best_cashback_site(db, product["source"])
 
                 opp = Opportunity(
+                    origin="manual_scout",
                     scan_profile_id=profile.id,
                     source=product["source"],
                     source_url=product["source_url"],
