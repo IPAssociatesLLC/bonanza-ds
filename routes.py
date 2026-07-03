@@ -320,12 +320,12 @@ def create_app(static_dir: str) -> FastAPI:
             for raw in raw_products[:req.max_products]:
                 product = normalize_aliexpress_product(raw)
 
-                # Filter out images containing Chinese text
-                from profitability import filter_chinese_images
-                try:
-                    product["image_urls"] = filter_chinese_images(product["image_urls"])
-                except Exception as ex:
-                    logger.warning("Error filtering Chinese text from images: %s", ex)
+                # Filter out images containing Chinese text (Temporarily Disabled per user request)
+                # from profitability import filter_chinese_images
+                # try:
+                #     product["image_urls"] = filter_chinese_images(product["image_urls"])
+                # except Exception as ex:
+                #     logger.warning("Error filtering Chinese text from images: %s", ex)
 
                 # Apply profile filters
                 if product["source_price"] < profile.min_price or product["source_price"] > profile.max_price:
