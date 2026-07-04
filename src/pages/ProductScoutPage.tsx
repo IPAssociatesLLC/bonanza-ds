@@ -57,7 +57,11 @@ export function ProductScoutPage() {
     try {
       await apiPost("/api/run-scan", { 
         profile_id: 1,
-        override_keyword: keyword || undefined
+        override_keyword: keyword || undefined,
+        min_price: minPrice ? parseFloat(minPrice) : undefined,
+        max_price: maxPrice ? parseFloat(maxPrice) : undefined,
+        min_rating: minRating ? parseFloat(minRating) : undefined,
+        min_orders: minOrders ? parseInt(minOrders) : undefined
       })
       refetch()
     } catch (e) {

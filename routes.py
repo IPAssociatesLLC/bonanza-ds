@@ -76,6 +76,10 @@ class RunScanRequest(BaseModel):
     octoparse_task_id: str | None = None
     max_products: int = 100
     override_keyword: str | None = None
+    min_price: float | None = None
+    max_price: float | None = None
+    min_rating: float | None = None
+    min_orders: int | None = None
 
 class TriggerScanRequest(BaseModel):
     algorithm: str
@@ -327,15 +331,20 @@ def create_app(static_dir: str) -> FastAPI:
                 # except Exception as ex:
                 #     logger.warning("Error filtering Chinese text from images: %s", ex)
 
-                # Apply profile filters (Temporarily disabled for manual scan to show all results)
-                # if product["source_price"] < profile.min_price or product["source_price"] > profile.max_price:
-                #     continue
-                # if product["monthly_sales"] < profile.min_monthly_sales:
-                #     continue
-                # if product["rating"] < profile.min_rating:
-                #     continue
-                # if profile.detect_out_of_stock and product["stock"] < profile.min_stock:
-                #     continue
+                # Apply UI filters (falling back to permissive defaults if left blank by user)
+                min_p = req.min_price if req.min_price is not None else 0.0
+                max_p = req.max_price if req.max_price is not None else 99999.0
+                min_r = req.min_rating if req.min_rating is not None else 0.0
+                min_o = req.min_orders if req.min_orders is not None else 0
+
+                if product["source_price"] < min_p or product["source_price"] > max_p:
+                    continue
+                if product["monthly_sales"] < min_o:
+                    continue
+                if product["rating"] < min_r:
+                    continue
+                if profile.detect_out_of_stock and product["stock"] < profile.min_stock:
+                    continue
 
                 # Find best cashback rate for this source
                 cb_rate = _get_best_cashback_rate(db, product["source"])
