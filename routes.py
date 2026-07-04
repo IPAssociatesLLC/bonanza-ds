@@ -317,7 +317,18 @@ def create_app(static_dir: str) -> FastAPI:
             else:
                 keyword = [k.strip() for k in keywords.split(",") if k.strip()][0] if keywords else "surfboard"
             url = f"https://www.aliexpress.com/w/wholesale-{keyword}.html"
+            # Fetch global pricing settings
+            pricing_model_setting = db.query(Setting).filter(Setting.key == "pricing_model").first()
+            pricing_model = pricing_model_setting.value if pricing_model_setting else "flat"
             
+            pricing_ranges_setting = db.query(Setting).filter(Setting.key == "pricing_ranges").first()
+            pricing_ranges = []
+            if pricing_ranges_setting and pricing_ranges_setting.value:
+                try:
+                    pricing_ranges = json.loads(pricing_ranges_setting.value)
+                except Exception:
+                    pass
+
             raw_products = await scrape_search(url, max_pages=3)
 
             opportunities_created = 0
@@ -349,9 +360,18 @@ def create_app(static_dir: str) -> FastAPI:
                 # Find best cashback rate for this source
                 cb_rate = _get_best_cashback_rate(db, product["source"])
                 
+                # Determine applicable margin based on pricing model
+                applicable_margin = profile.min_margin_pct
+                if pricing_model == "tiered" and pricing_ranges:
+                    cost = product["source_price"]
+                    for r in pricing_ranges:
+                        if r.get("min", 0) <= cost <= r.get("max", 99999):
+                            applicable_margin = float(r.get("margin", applicable_margin))
+                            break
+
                 target_price = suggest_target_price(
                     product["source_price"], product["shipping_cost"],
-                    profile.bonanza_fee_pct, profile.min_margin_pct, cb_rate
+                    profile.bonanza_fee_pct, applicable_margin, cb_rate
                 )
                 
                 metrics = calculate_profitability(

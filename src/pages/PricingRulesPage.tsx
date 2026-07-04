@@ -25,7 +25,15 @@ import {
 } from "lucide-react"
 import type { AppSettings } from "@/types"
 
+export interface PricingRange {
+  min: number
+  max: number
+  margin: number
+}
+
 interface PricingRules {
+  pricing_model: "flat" | "tiered"
+  pricing_ranges: PricingRange[]
   default_min_margin: number
   bonanza_google_fee: number
   additional_cost_buffer: number
@@ -41,6 +49,17 @@ interface PricingRules {
 }
 
 const DEFAULTS: PricingRules = {
+  pricing_model: "flat",
+  pricing_ranges: [
+    { min: 5, max: 10, margin: 50 },
+    { min: 10.01, max: 20, margin: 40 },
+    { min: 20.01, max: 50, margin: 30 },
+    { min: 50.01, max: 100, margin: 25 },
+    { min: 100.01, max: 500, margin: 20 },
+    { min: 500.01, max: 1000, margin: 15 },
+    { min: 1000.01, max: 2500, margin: 10 },
+    { min: 2500.01, max: 5000, margin: 10 },
+  ],
   default_min_margin: 30,
   bonanza_google_fee: 20,
   additional_cost_buffer: 0,
@@ -66,6 +85,15 @@ function getStr(settings: AppSettings | null, key: string, fallback: string): st
   return settings[key].value
 }
 
+function getJSON<T>(settings: AppSettings | null, key: string, fallback: T): T {
+  if (!settings || !settings[key]) return fallback
+  try {
+    return JSON.parse(settings[key].value) as T
+  } catch {
+    return fallback
+  }
+}
+
 export function PricingRulesPage() {
   const { data: settings, loading, error, refetch } = useFetch<AppSettings>("/api/settings")
   const [rules, setRules] = useState<PricingRules>(DEFAULTS)
@@ -76,6 +104,8 @@ export function PricingRulesPage() {
   useEffect(() => {
     if (!settings) return
     setRules({
+      pricing_model: getStr(settings, "pricing_model", "flat") as "flat" | "tiered",
+      pricing_ranges: getJSON<PricingRange[]>(settings, "pricing_ranges", DEFAULTS.pricing_ranges),
       default_min_margin: getNum(settings, "default_min_margin", 30),
       bonanza_google_fee: getNum(settings, "bonanza_google_fee", 20),
       additional_cost_buffer: getNum(settings, "additional_cost_buffer", 0),
@@ -101,6 +131,8 @@ export function PricingRulesPage() {
     setSaved(false)
     try {
       const entries: { key: string; value: string; category: string; description: string }[] = [
+        { key: "pricing_model", value: rules.pricing_model, category: "pricing", description: "Pricing model selection" },
+        { key: "pricing_ranges", value: JSON.stringify(rules.pricing_ranges), category: "pricing", description: "Pricing ranges for tiered model" },
         { key: "default_min_margin", value: String(rules.default_min_margin), category: "pricing", description: "Default minimum margin %" },
         { key: "bonanza_google_fee", value: String(rules.bonanza_google_fee), category: "pricing", description: "Bonanza Google Products fee %" },
         { key: "additional_cost_buffer", value: String(rules.additional_cost_buffer), category: "pricing", description: "Additional cost buffer %" },
@@ -146,19 +178,69 @@ export function PricingRulesPage() {
             </div>
           </CardHeader>
           <CardContent className="space-y-6">
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <Label>Default Minimum Margin</Label>
-                <span className="text-sm font-medium text-primary tabular-nums">{rules.default_min_margin}%</span>
-              </div>
-              <Slider
-                value={[rules.default_min_margin]}
-                onValueChange={(v) => update("default_min_margin", v[0])}
-                min={10}
-                max={80}
-                step={1}
-              />
+            <div className="space-y-4">
+              <Label>Pricing Model</Label>
+              <RadioGroup
+                value={rules.pricing_model}
+                onValueChange={(v) => update("pricing_model", v as "flat" | "tiered")}
+                className="flex gap-6"
+              >
+                <div className="flex items-center gap-2">
+                  <RadioGroupItem value="flat" id="model-flat" />
+                  <Label htmlFor="model-flat" className="cursor-pointer font-normal">Flat Percentage (Global)</Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <RadioGroupItem value="tiered" id="model-tiered" />
+                  <Label htmlFor="model-tiered" className="cursor-pointer font-normal">Cost-Based Tiers</Label>
+                </div>
+              </RadioGroup>
             </div>
+
+            {rules.pricing_model === "flat" ? (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label>Default Minimum Margin</Label>
+                  <span className="text-sm font-medium text-primary tabular-nums">{rules.default_min_margin}%</span>
+                </div>
+                <Slider
+                  value={[rules.default_min_margin]}
+                  onValueChange={(v) => update("default_min_margin", v[0])}
+                  min={1}
+                  max={99}
+                  step={1}
+                />
+              </div>
+            ) : (
+              <div className="space-y-4 rounded-md border p-4">
+                <div className="mb-2">
+                  <h4 className="text-sm font-medium">Cost-Based Profit Margins</h4>
+                  <p className="text-xs text-muted-foreground">Set the profit percentage for each source cost range.</p>
+                </div>
+                <div className="space-y-3">
+                  {rules.pricing_ranges.map((range, idx) => (
+                    <div key={idx} className="flex items-center gap-4">
+                      <div className="w-48 text-sm text-muted-foreground">
+                        ${range.min.toFixed(2)} - ${range.max.toFixed(2)}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          className="w-24 h-8"
+                          value={range.margin}
+                          onChange={(e) => {
+                            const newRanges = [...rules.pricing_ranges]
+                            newRanges[idx].margin = parseFloat(e.target.value) || 0
+                            update("pricing_ranges", newRanges)
+                          }}
+                        />
+                        <span className="text-sm">%</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <Label>Bonanza Google Products Fee</Label>
