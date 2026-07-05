@@ -894,6 +894,82 @@ def create_app(static_dir: str) -> FastAPI:
             "opportunities_by_status": {s: n for s, n in opp_status_counts},
         }
 
+    @api.post("/scout/chat")
+    async def ai_scout_chat(req: Request, db: Session = Depends(get_db)):
+        data = await req.json()
+        messages = data.get("messages", [])
+        user_message = messages[-1].get("content", "") if messages else "Hello"
+        
+        try:
+            import os
+            from mcp.client.sse import sse_client
+            from mcp.client.session import ClientSession
+            from google import genai
+            from google.genai import types
+            
+            client = genai.Client(
+                api_key=os.environ.get("GEMINI_WORKSHOP_API_KEY"),
+                http_options={
+                    "api_version": "v1alpha",
+                    "base_url": os.environ.get("GEMINI_WORKSHOP_BASE_URL"),
+                },
+            )
+            
+            async with sse_client("https://api.shopsavvy.com/mcp/sse") as streams:
+                async with ClientSession(streams[0], streams[1]) as mcp_session:
+                    await mcp_session.initialize()
+                    
+                    shopsavvy_tools = await mcp_session.list_tools()
+                    
+                    gemini_tools = []
+                    for t in shopsavvy_tools.tools:
+                        gemini_tools.append(types.Tool(
+                            function_declarations=[
+                                types.FunctionDeclaration(
+                                    name=t.name,
+                                    description=t.description,
+                                    parameters=t.inputSchema
+                                )
+                            ]
+                        ))
+                    
+                    response = client.models.generate_content(
+                        model='gemini-2.5-flash',
+                        contents=user_message,
+                        config=types.GenerateContentConfig(
+                            tools=gemini_tools,
+                            temperature=0.0
+                        )
+                    )
+                    
+                    if response.function_calls:
+                        call = response.function_calls[0]
+                        tool_name = call.name
+                        # Convert args to a dict if it isn't already
+                        args = dict(call.args) if call.args else {}
+                        
+                        mcp_result = await mcp_session.call_tool(tool_name, arguments=args)
+                        tool_result_text = "\n".join(c.text for c in mcp_result.content if getattr(c, "type", "") == "text")
+                        
+                        final_response = client.models.generate_content(
+                            model='gemini-2.5-flash',
+                            contents=[
+                                user_message,
+                                response.candidates[0].content,
+                                types.Part.from_function_response(
+                                    name=tool_name,
+                                    response={"result": tool_result_text}
+                                )
+                            ],
+                        )
+                        return {"response": final_response.text}
+                    else:
+                        return {"response": response.text}
+                        
+        except Exception as e:
+            logger.error(f"Error in AI Scout Chat: {e}")
+            return {"response": f"AI Error: {str(e)}"}
+
     # ─── Bonanza Booth Items ───────────────────────────────────────────────
 
     @api.get("/bonanza/booth-items")
