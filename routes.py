@@ -915,6 +915,16 @@ def create_app(static_dir: str) -> FastAPI:
             )
             
             gemini_history = []
+            system_instruction = types.Content(role="user", parts=[types.Part.from_text(
+                "You are an AI Swarm Agent. You MUST use your provided tools to search ShopSavvy. "
+                "When you find products, you MUST output them in a JSON array wrapped in ```json ... ``` "
+                "matching exactly this schema: id (int), title (str), image (url str), sourceSite (str), sourceUrl (str), "
+                "buyRegPrice (str format $X.XX), buyDiscountPrice (str format $X.XX), discountAmount (str), "
+                "googleLowPrice (str), googleAvgPrice (str), googleHighPrice (str), profitLow (str), marginLow (str), "
+                "profitAvg (str), marginAvg (str), status (str 'Verified')."
+            )])
+            gemini_history.append(system_instruction)
+            
             for m in messages:
                 role = "user" if m.get("role") in ["user", "system"] else "model"
                 gemini_history.append(types.Content(role=role, parts=[types.Part.from_text(m.get("content", "") or " ")]))
