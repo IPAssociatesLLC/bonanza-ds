@@ -898,10 +898,9 @@ def create_app(static_dir: str) -> FastAPI:
     async def ai_scout_chat(req: Request, db: Session = Depends(get_db)):
         data = await req.json()
         messages = data.get("messages", [])
-        user_message = messages[-1].get("content", "") if messages else "Hello"
         
         try:
-            import os
+            import os, re, json
             from mcp.client.sse import sse_client
             from mcp.client.session import ClientSession
             from google import genai
@@ -914,6 +913,11 @@ def create_app(static_dir: str) -> FastAPI:
                     "base_url": os.environ.get("GEMINI_WORKSHOP_BASE_URL"),
                 },
             )
+            
+            gemini_history = []
+            for m in messages:
+                role = "user" if m.get("role") in ["user", "system"] else "model"
+                gemini_history.append(types.Content(role=role, parts=[types.Part.from_text(m.get("content", "") or " ")]))
             
             async with sse_client("https://api.shopsavvy.com/mcp/sse") as streams:
                 async with ClientSession(streams[0], streams[1]) as mcp_session:
@@ -935,7 +939,7 @@ def create_app(static_dir: str) -> FastAPI:
                     
                     response = client.models.generate_content(
                         model='gemini-2.5-flash',
-                        contents=user_message,
+                        contents=gemini_history,
                         config=types.GenerateContentConfig(
                             tools=gemini_tools,
                             temperature=0.0
@@ -945,30 +949,64 @@ def create_app(static_dir: str) -> FastAPI:
                     if response.function_calls:
                         call = response.function_calls[0]
                         tool_name = call.name
-                        # Convert args to a dict if it isn't already
                         args = dict(call.args) if call.args else {}
                         
                         mcp_result = await mcp_session.call_tool(tool_name, arguments=args)
                         tool_result_text = "\n".join(c.text for c in mcp_result.content if getattr(c, "type", "") == "text")
                         
-                        final_response = client.models.generate_content(
-                            model='gemini-2.5-flash',
-                            contents=[
-                                user_message,
-                                response.candidates[0].content,
+                        gemini_history.append(response.candidates[0].content)
+                        gemini_history.append(
+                            types.Content(role="user", parts=[
                                 types.Part.from_function_response(
                                     name=tool_name,
                                     response={"result": tool_result_text}
-                                )
-                            ],
+                                ),
+                                types.Part.from_text("Present the findings conversationally. ALSO, you MUST include a JSON array in your response wrapped in ```json ... ``` with the products you found, matching exactly this schema for each product: id (int), title (str), image (url str), sourceSite (str), sourceUrl (str), buyRegPrice (str format $X.XX), buyDiscountPrice (str format $X.XX), discountAmount (str), googleLowPrice (str), googleAvgPrice (str), googleHighPrice (str), profitLow (str), marginLow (str), profitAvg (str), marginAvg (str), status (str 'Verified').")
+                            ])
                         )
-                        return {"response": final_response.text}
+                        
+                        final_response = client.models.generate_content(
+                            model='gemini-2.5-flash',
+                            contents=gemini_history,
+                        )
+                        
+                        resp_text = final_response.text
+                        results = []
+                        match = re.search(r"```json\s*(.*?)\s*```", resp_text, re.DOTALL)
+                        if match:
+                            try:
+                                results = json.loads(match.group(1))
+                                resp_text = re.sub(r"```json\s*(.*?)\s*```", "", resp_text, flags=re.DOTALL).strip()
+                            except Exception as e:
+                                logger.error(f"Failed to parse JSON from AI: {e}")
+                                
+                        return {"response": resp_text, "results": results}
                     else:
-                        return {"response": response.text}
+                        return {"response": response.text, "results": []}
                         
         except Exception as e:
             logger.error(f"Error in AI Scout Chat: {e}")
-            return {"response": f"AI Error: {str(e)}"}
+            return {"response": f"AI Error: {str(e)}", "results": []}
+
+    @api.post("/opportunities")
+    async def create_opportunity(req: Request, db: Session = Depends(get_db)):
+        try:
+            data = await req.json()
+            opp = Opportunity(
+                title=data.get("title", "Unknown"),
+                source="shopsavvy",
+                source_price=data.get("source_price", 0.0),
+                margin_pct=data.get("margin_pct", 0.0),
+                source_url=data.get("source_url", ""),
+                image_urls=data.get("image_url", ""),
+                origin=data.get("origin", "ai_swarm")
+            )
+            db.add(opp)
+            db.commit()
+            return {"status": "success", "id": opp.id}
+        except Exception as e:
+            logger.error(f"Error creating opportunity: {e}")
+            return {"status": "error", "message": str(e)}
 
     # ─── Bonanza Booth Items ───────────────────────────────────────────────
 

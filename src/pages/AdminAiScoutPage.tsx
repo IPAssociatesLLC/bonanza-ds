@@ -91,6 +91,7 @@ export function AdminAiScoutPage() {
   
   const [isScanning, setIsScanning] = useState(false)
   const [chatInput, setChatInput] = useState("")
+  const [liveResults, setLiveResults] = useState<any[]>([])
   
   // Track editable sell prices for the mock items
   const [sellPrices, setSellPrices] = useState<Record<number, string>>({
@@ -110,13 +111,37 @@ export function AdminAiScoutPage() {
     }
   }, [messages])
 
-  const handleDeploySwarm = (e: React.FormEvent) => {
+  const handleDeploySwarm = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsScanning(true)
     setMessages(prev => [...prev, { id: Date.now().toString(), role: "system", content: "Swarm deployed with custom parameters. Hunting for anomalies..." }])
-    setTimeout(() => {
+    
+    try {
+      const res = await apiPost("/api/scout/deploy", {
+        targetUrls,
+        minMargin,
+        minSearchVolume,
+        maxDealDuration,
+        cashbackSites,
+        minCashbackRate,
+        messages: []
+      }) as { results: any[] }
+      
+      setLiveResults(res.results)
+      
+      // Seed sellPrices for new results
+      const newPrices: Record<number, string> = {}
+      res.results.forEach(r => {
+        newPrices[r.id] = r.suggestedSellPrice
+      })
+      setSellPrices(newPrices)
+      
+      setMessages(prev => [...prev, { id: Date.now().toString(), role: "system", content: `Scraping complete. Found ${res.results.length} verified deals.` }])
+    } catch (err) {
+      setMessages(prev => [...prev, { id: Date.now().toString(), role: "system", content: "Error executing Swarm scraper." }])
+    } finally {
       setIsScanning(false)
-    }, 2000)
+    }
   }
 
   const handleChatSend = async (e: React.FormEvent) => {
@@ -137,9 +162,12 @@ export function AdminAiScoutPage() {
         cashbackSites,
         minCashbackRate,
         messages: newMessages
-      }) as { response: string }
+      }) as { response: string, results?: any[] }
       
       setMessages(prev => [...prev, { id: Date.now().toString(), role: "ai", content: res.response }])
+      if (res.results && res.results.length > 0) {
+        setLiveResults(res.results)
+      }
     } catch (err) {
       setMessages(prev => [...prev, { id: Date.now().toString(), role: "system", content: "Error connecting to AI Swarm Backend." }])
     }
@@ -147,6 +175,23 @@ export function AdminAiScoutPage() {
 
   const handlePriceChange = (id: number, val: string) => {
     setSellPrices(prev => ({ ...prev, [id]: val }))
+  }
+
+  const handleSaveDeal = async (result: any) => {
+    try {
+      await apiPost("/api/opportunities", {
+        title: result.title,
+        source_price: parseFloat(String(result.buyDiscountPrice).replace(/[^0-9.]/g, '') || "0"),
+        margin_pct: parseFloat(String(result.marginLow).replace(/[^0-9.]/g, '') || "0"),
+        source_url: result.sourceUrl,
+        image_url: result.image,
+        origin: "ai_swarm"
+      })
+      const newResults = liveResults.map(r => r.id === result.id ? { ...r, status: "Saved!" } : r)
+      setLiveResults(newResults)
+    } catch (err) {
+      console.error("Failed to save deal:", err)
+    }
   }
 
   return (
@@ -261,7 +306,12 @@ export function AdminAiScoutPage() {
             </CardHeader>
             <CardContent className="p-4 flex-1 overflow-y-auto space-y-4">
               
-              {MOCK_RESULTS.map((result) => (
+              {liveResults.length === 0 && !isScanning && (
+                <div className="text-center p-8 text-slate-500">
+                  No discoveries yet. Deploy the Swarm to begin hunting.
+                </div>
+              )}
+              {liveResults.map((result) => (
                 <div key={result.id} className="bg-white dark:bg-slate-950 rounded-xl border border-slate-300 dark:border-slate-700 shadow-sm overflow-hidden flex flex-col">
                   {/* Image Section */}
                   <div className="bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 relative flex items-center justify-center min-h-[160px] p-2">
@@ -337,9 +387,9 @@ export function AdminAiScoutPage() {
 
                     {/* Action */}
                     <div className="mt-2">
-                      <Button size="sm" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-9">
+                      <Button size="sm" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-9" onClick={() => handleSaveDeal(result)}>
                         <Save className="w-4 h-4 mr-2" />
-                        Save Deal to Opportunities
+                        {result.status === "Saved!" ? "Saved!" : "Save Deal to Opportunities"}
                       </Button>
                     </div>
 
