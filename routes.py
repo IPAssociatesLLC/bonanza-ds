@@ -610,12 +610,12 @@ def create_app(static_dir: str) -> FastAPI:
         updated_count = 0
 
         for item in raw_products:
-            title = item.get("title") or item.get("name")
+            title = item.get("Product Name") or item.get("title") or item.get("name")
             if not title:
                 continue
 
             source_product_id = item.get("itemId") or item.get("id") or item.get("productId") or item.get("source_product_id")
-            source_url = item.get("url") or item.get("productUrl") or item.get("source_url") or ""
+            source_url = item.get("Product URL") or item.get("url") or item.get("productUrl") or item.get("source_url") or ""
             
             if not source_product_id and source_url:
                 import re
@@ -627,7 +627,7 @@ def create_app(static_dir: str) -> FastAPI:
                 import hashlib
                 source_product_id = hashlib.md5(title.encode('utf-8')).hexdigest()[:12]
 
-            raw_price = item.get("price") or item.get("discount_price") or item.get("source_price") or 0.0
+            raw_price = item.get("Product Price") or item.get("Price") or item.get("price") or item.get("discount_price") or item.get("source_price") or 0.0
             if isinstance(raw_price, str):
                 import re
                 try:
@@ -661,20 +661,20 @@ def create_app(static_dir: str) -> FastAPI:
             elif isinstance(raw_stock, (int, float)):
                 stock = int(raw_stock)
 
-            raw_images = item.get("images") or item.get("image_urls") or item.get("image") or item.get("imageUrl") or ""
+            raw_images = item.get("All Images") or item.get("Product Image") or item.get("images") or item.get("image_urls") or item.get("image") or item.get("imageUrl") or ""
             if isinstance(raw_images, list):
                 image_urls = "|".join(raw_images)
             else:
                 image_urls = str(raw_images)
 
-            brand = item.get("brand") or item.get("brandName") or ""
+            brand = item.get("Product Brand") or item.get("brand") or item.get("brandName") or ""
             brand_lower = brand.strip().lower()
             if not brand or brand_lower in ["no brand name", "not branded", "unbranded", "generic", "none", "n/a", "no brand", "brand not available"]:
                 brand = "Unbranded"
             else:
                 brand = brand.strip()
 
-            upc = item.get("upc") or item.get("barcode") or "brand not available"
+            upc = item.get("UPC") or item.get("upc") or item.get("barcode") or "brand not available"
 
             opp = db.query(Opportunity).filter(
                 Opportunity.source_product_id == str(source_product_id),
