@@ -440,7 +440,7 @@ export function ScanResultsPage() {
       <Dialog open={detailId !== null} onOpenChange={(open) => !open && setDetailId(null)}>
         <DialogContent className="w-full overflow-y-auto sm:max-w-[800px] max-h-[90vh] bg-white dark:bg-zinc-950 border border-border text-card-foreground shadow-xl sm:rounded-xl">
           <DialogHeader>
-            <DialogTitle>Opportunity Details</DialogTitle>
+            <DialogTitle>Product Details</DialogTitle>
           </DialogHeader>
 
           {detailLoading && <LoadingSpinner text="Loading details..." />}
@@ -549,7 +549,7 @@ export function ScanResultsPage() {
 
               {/* Product Metrics */}
               <div>
-                <h4 className="mb-2 text-sm font-semibold text-foreground">Product Metrics</h4>
+                <h4 className="mb-2 text-sm font-semibold text-foreground">Product Details & Metrics</h4>
                 <div className="space-y-2 text-sm">
                   <div className="flex items-center justify-between">
                     <span className="flex items-center gap-1.5 text-muted-foreground">
@@ -572,6 +572,47 @@ export function ScanResultsPage() {
                     </span>
                     <span className="font-medium text-foreground">{formatNumber(detailOpp.stock)}</span>
                   </div>
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-1.5 text-muted-foreground">
+                      <Package className="h-3.5 w-3.5" />
+                      Brand
+                    </span>
+                    <span className="font-medium text-foreground">{detailOpp.brand || "Unbranded"}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-1.5 text-muted-foreground">
+                      <Package className="h-3.5 w-3.5" />
+                      UPC / Barcode
+                    </span>
+                    <span className="font-medium text-foreground">{detailOpp.upc || "brand not available"}</span>
+                  </div>
+                  {detailOpp.discount_info && (
+                    <div className="flex items-center justify-between">
+                      <span className="flex items-center gap-1.5 text-muted-foreground">
+                        <DollarSign className="h-3.5 w-3.5" />
+                        Savings Info
+                      </span>
+                      <span className="font-medium text-green-500">{detailOpp.discount_info}</span>
+                    </div>
+                  )}
+                  {detailOpp.monthly_search_volume > 0 && (
+                    <div className="flex items-center justify-between">
+                      <span className="flex items-center gap-1.5 text-muted-foreground">
+                        <TrendingUp className="h-3.5 w-3.5" />
+                        Google Search Volume
+                      </span>
+                      <span className="font-medium text-foreground">{formatNumber(detailOpp.monthly_search_volume)} searches/mo</span>
+                    </div>
+                  )}
+                  {detailOpp.google_low_price > 0 && (
+                    <div className="flex items-center justify-between">
+                      <span className="flex items-center gap-1.5 text-muted-foreground">
+                        <DollarSign className="h-3.5 w-3.5" />
+                        Google Shopping Range
+                      </span>
+                      <span className="font-medium text-foreground">{formatCurrency(detailOpp.google_low_price)} - {formatCurrency(detailOpp.google_high_price)}</span>
+                    </div>
+                  )}
                 </div>
               </div>
 

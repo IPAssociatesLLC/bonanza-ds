@@ -61,6 +61,12 @@ export interface Opportunity {
   ai_description: string;
   created_at: string | null;
   updated_at: string | null;
+  brand: string;
+  upc: string;
+  monthly_search_volume: number;
+  google_low_price: number;
+  google_high_price: number;
+  discount_info: string;
   vendor_analysis?: VendorAnalysis;
 }
 

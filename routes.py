@@ -611,12 +611,12 @@ def create_app(static_dir: str) -> FastAPI:
         processed_ids = []
 
         for item in raw_products:
-            title = item.get("Product Name") or item.get("title") or item.get("name")
+            title = item.get("Product Name") or item.get("title") or item.get("name") or item.get("product_name")
             if not title:
                 continue
 
-            source_product_id = item.get("itemId") or item.get("id") or item.get("productId") or item.get("source_product_id")
-            source_url = item.get("Product URL") or item.get("url") or item.get("productUrl") or item.get("source_url") or ""
+            source_product_id = item.get("itemId") or item.get("id") or item.get("productId") or item.get("product_id") or item.get("sku") or item.get("source_product_id")
+            source_url = item.get("Product URL") or item.get("url") or item.get("productUrl") or item.get("product_url") or item.get("link") or item.get("source_url") or ""
             
             if not source_product_id and source_url:
                 import re
@@ -628,7 +628,7 @@ def create_app(static_dir: str) -> FastAPI:
                 import hashlib
                 source_product_id = hashlib.md5(title.encode('utf-8')).hexdigest()[:12]
 
-            raw_price = item.get("Product Price") or item.get("Price") or item.get("price") or item.get("discount_price") or item.get("source_price") or 0.0
+            raw_price = item.get("Product Price") or item.get("Price") or item.get("price") or item.get("sale_price") or item.get("final_price") or item.get("price_active") or item.get("discount_price") or item.get("source_price") or 0.0
             if isinstance(raw_price, str):
                 import re
                 try:
@@ -639,7 +639,16 @@ def create_app(static_dir: str) -> FastAPI:
             else:
                 source_price = float(raw_price)
 
-            raw_shipping = item.get("shipping") or item.get("shipping_cost") or 0.0
+            orig_price = item.get("Product Price Before Discount") or item.get("original_price") or item.get("price_before_discount") or item.get("price_original") or ""
+            savings = item.get("Product Savings") or item.get("savings") or item.get("discount_amount") or ""
+            discount_info_str = ""
+            if orig_price:
+                discount_info_str += f"Original: {orig_price} "
+            if savings:
+                discount_info_str += f"({savings})"
+            discount_info_str = discount_info_str.strip()
+
+            raw_shipping = item.get("shipping") or item.get("shipping_cost") or item.get("shipping_price") or 0.0
             if isinstance(raw_shipping, str):
                 import re
                 try:
@@ -650,7 +659,7 @@ def create_app(static_dir: str) -> FastAPI:
             else:
                 shipping_cost = float(raw_shipping)
 
-            raw_stock = item.get("stock") or item.get("quantity") or item.get("availability") or 10
+            raw_stock = item.get("stock") or item.get("quantity") or item.get("availability") or item.get("Product Availability") or item.get("stock_status") or 10
             stock = 10
             if isinstance(raw_stock, str):
                 if "out" in raw_stock.lower():
@@ -662,20 +671,24 @@ def create_app(static_dir: str) -> FastAPI:
             elif isinstance(raw_stock, (int, float)):
                 stock = int(raw_stock)
 
-            raw_images = item.get("All Images") or item.get("Product Image") or item.get("images") or item.get("image_urls") or item.get("image") or item.get("imageUrl") or ""
+            raw_images = item.get("All Images") or item.get("Product Image") or item.get("images") or item.get("image_urls") or item.get("image") or item.get("imageUrl") or item.get("main_image") or ""
             if isinstance(raw_images, list):
                 image_urls = "|".join(raw_images)
             else:
                 image_urls = str(raw_images)
 
-            brand = item.get("Product Brand") or item.get("brand") or item.get("brandName") or ""
+            brand = item.get("Product Brand") or item.get("brand") or item.get("brandName") or item.get("brand_name") or ""
             brand_lower = brand.strip().lower()
             if not brand or brand_lower in ["no brand name", "not branded", "unbranded", "generic", "none", "n/a", "no brand", "brand not available", "not available"]:
                 brand = "Unbranded"
             else:
                 brand = brand.strip()
 
-            upc = item.get("UPC") or item.get("upc") or item.get("barcode") or "brand not available"
+            upc = item.get("UPC") or item.get("upc") or item.get("barcode") or item.get("gtin") or "brand not available"
+
+            rating = float(item.get("Product Rating") or item.get("rating") or item.get("reviews_rating") or item.get("rating_average") or 0.0)
+            review_count = int(item.get("Product Reviews") or item.get("review_count") or item.get("reviews_count") or 0)
+            seller_name = item.get("Product Seller") or item.get("seller_name") or item.get("sold_by") or item.get("seller") or ""
 
             opp = db.query(Opportunity).filter(
                 Opportunity.source_product_id == str(source_product_id),
@@ -705,6 +718,10 @@ def create_app(static_dir: str) -> FastAPI:
                 opp.final_margin_pct = min_margin
                 opp.brand = brand
                 opp.upc = upc
+                opp.discount_info = discount_info_str
+                opp.rating = rating
+                opp.review_count = review_count
+                opp.seller_name = seller_name
                 opp.updated_at = datetime.utcnow()
                 opp.status = "new"  # Re-evaluate it when rescanned
                 db.flush()
@@ -717,9 +734,9 @@ def create_app(static_dir: str) -> FastAPI:
                     source_url=source_url,
                     source_product_id=str(source_product_id),
                     title=title,
-                    description=item.get("description") or "",
+                    description=item.get("description") or item.get("product_description") or "",
                     image_urls=image_urls,
-                    category=item.get("category") or "General",
+                    category=item.get("category") or item.get("Product Category") or "General",
                     source_price=source_price,
                     shipping_cost=shipping_cost,
                     target_price=target_price,
@@ -729,6 +746,10 @@ def create_app(static_dir: str) -> FastAPI:
                     final_margin_pct=min_margin,
                     brand=brand,
                     upc=upc,
+                    discount_info=discount_info_str,
+                    rating=rating,
+                    review_count=review_count,
+                    seller_name=seller_name,
                     status="new",
                     created_at=datetime.utcnow(),
                     updated_at=datetime.utcnow()
