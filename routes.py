@@ -592,6 +592,155 @@ def create_app(static_dir: str) -> FastAPI:
             return {"suggested_price": optimal, "metrics": metrics}
         except Exception as e:
             raise HTTPException(500, f"Price suggestion failed: {str(e)}")
+    @api.post("/import/walmart")
+    async def import_walmart_webhook(req: Request, db: Session = Depends(get_db)):
+        try:
+            payload = await req.json()
+        except Exception as e:
+            raise HTTPException(400, f"Invalid JSON payload: {str(e)}")
+
+        if isinstance(payload, dict):
+            raw_products = [payload]
+        elif isinstance(payload, list):
+            raw_products = payload
+        else:
+            raise HTTPException(400, "Payload must be a JSON object or list of objects")
+
+        imported_count = 0
+        updated_count = 0
+
+        for item in raw_products:
+            title = item.get("title") or item.get("name")
+            if not title:
+                continue
+
+            source_product_id = item.get("itemId") or item.get("id") or item.get("productId") or item.get("source_product_id")
+            source_url = item.get("url") or item.get("productUrl") or item.get("source_url") or ""
+            
+            if not source_product_id and source_url:
+                import re
+                match = re.search(r"/ip/(?:[^/]+/)?(\d+)", source_url)
+                if match:
+                    source_product_id = match.group(1)
+
+            if not source_product_id:
+                import hashlib
+                source_product_id = hashlib.md5(title.encode('utf-8')).hexdigest()[:12]
+
+            raw_price = item.get("price") or item.get("discount_price") or item.get("source_price") or 0.0
+            if isinstance(raw_price, str):
+                import re
+                try:
+                    m = re.search(r"([0-9]+(?:\.[0-9]+)?)", raw_price.replace(",", ""))
+                    source_price = float(m.group(1)) if m else 0.0
+                except:
+                    source_price = 0.0
+            else:
+                source_price = float(raw_price)
+
+            raw_shipping = item.get("shipping") or item.get("shipping_cost") or 0.0
+            if isinstance(raw_shipping, str):
+                import re
+                try:
+                    m = re.search(r"([0-9]+(?:\.[0-9]+)?)", raw_shipping.replace(",", ""))
+                    shipping_cost = float(m.group(1)) if m else 0.0
+                except:
+                    shipping_cost = 0.0
+            else:
+                shipping_cost = float(raw_shipping)
+
+            raw_stock = item.get("stock") or item.get("quantity") or item.get("availability") or 10
+            stock = 10
+            if isinstance(raw_stock, str):
+                if "out" in raw_stock.lower():
+                    stock = 0
+                else:
+                    import re
+                    m = re.search(r"(\d+)", raw_stock)
+                    stock = int(m.group(1)) if m else 10
+            elif isinstance(raw_stock, (int, float)):
+                stock = int(raw_stock)
+
+            raw_images = item.get("images") or item.get("image_urls") or item.get("image") or item.get("imageUrl") or ""
+            if isinstance(raw_images, list):
+                image_urls = "|".join(raw_images)
+            else:
+                image_urls = str(raw_images)
+
+            brand = item.get("brand") or item.get("brandName") or ""
+            brand_lower = brand.strip().lower()
+            if not brand or brand_lower in ["no brand name", "not branded", "unbranded", "generic", "none", "n/a", "no brand", "brand not available"]:
+                brand = "Unbranded"
+            else:
+                brand = brand.strip()
+
+            upc = item.get("upc") or item.get("barcode") or "brand not available"
+
+            opp = db.query(Opportunity).filter(
+                Opportunity.source_product_id == str(source_product_id),
+                Opportunity.source == "walmart"
+            ).first()
+
+            min_margin = _get_setting(db, "default_min_margin", "30.0", float)
+            bonanza_fee = _get_setting(db, "bonanza_google_fee", "20.0", float)
+            
+            margin_factor = 1.0 - (bonanza_fee / 100.0) - (min_margin / 100.0)
+            if margin_factor > 0.1:
+                target_price = round((source_price + shipping_cost) / margin_factor, 2)
+            else:
+                target_price = round((source_price + shipping_cost) * 1.5, 2)
+
+            profit = target_price - source_price - shipping_cost - (target_price * (bonanza_fee / 100.0))
+
+            if opp:
+                opp.title = title
+                opp.source_price = source_price
+                opp.shipping_cost = shipping_cost
+                opp.stock = stock
+                opp.image_urls = image_urls
+                opp.target_price = target_price
+                opp.margin_pct = min_margin
+                opp.final_profit = profit
+                opp.final_margin_pct = min_margin
+                opp.brand = brand
+                opp.upc = upc
+                opp.updated_at = datetime.utcnow()
+                opp.status = "updated"
+                updated_count += 1
+            else:
+                opp = Opportunity(
+                    origin="manual_scout",
+                    source="walmart",
+                    source_url=source_url,
+                    source_product_id=str(source_product_id),
+                    title=title,
+                    description=item.get("description") or "",
+                    image_urls=image_urls,
+                    category=item.get("category") or "General",
+                    source_price=source_price,
+                    shipping_cost=shipping_cost,
+                    target_price=target_price,
+                    stock=stock,
+                    margin_pct=min_margin,
+                    final_profit=profit,
+                    final_margin_pct=min_margin,
+                    brand=brand,
+                    upc=upc,
+                    status="new",
+                    created_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow()
+                )
+                db.add(opp)
+                imported_count += 1
+
+        db.commit()
+
+        return {
+            "status": "success",
+            "imported": imported_count,
+            "updated": updated_count,
+            "message": f"Successfully processed {imported_count + updated_count} products."
+        }
 
     # ─── Import to Bonanza ─────────────────────────────────────────────────
 
