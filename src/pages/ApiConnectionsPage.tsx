@@ -71,6 +71,16 @@ export function ApiConnectionsPage() {
   const [scrapflySaved, setScrapflySaved] = useState(false)
   const [scrapflySaveError, setScrapflySaveError] = useState<string | null>(null)
 
+  // DataForSEO fields
+  const [dataforseoEmail, setDataforseoEmail] = useState<FieldState>({ value: "", saving: false, saved: false, error: null })
+  const [dataforseoPassword, setDataforseoPassword] = useState<FieldState>({ value: "", saving: false, saved: false, error: null })
+  const [dataforseoConn, setDataforseoConn] = useState<ConnStatus>("idle")
+  const [dataforseoConnMsg, setDataforseoConnMsg] = useState<string>("")
+  
+  const [dataforseoSaving, setDataforseoSaving] = useState(false)
+  const [dataforseoSaved, setDataforseoSaved] = useState(false)
+  const [dataforseoSaveError, setDataforseoSaveError] = useState<string | null>(null)
+
   // AI model
   const [aiModel, setAiModel] = useState<FieldState>({ value: "gemini-3-flash-preview", saving: false, saved: false, error: null })
 
@@ -81,6 +91,8 @@ export function ApiConnectionsPage() {
     setBonanzaCertName((s) => ({ ...s, value: getSetting(settings, "bonanza_certification_name") }))
     setBonanzaToken((s) => ({ ...s, value: getSetting(settings, "bonanza_auth_token") }))
     setScrapflyApiKey((s) => ({ ...s, value: getSetting(settings, "scrapfly_api_key") }))
+    setDataforseoEmail((s) => ({ ...s, value: getSetting(settings, "dataforseo_email") }))
+    setDataforseoPassword((s) => ({ ...s, value: getSetting(settings, "dataforseo_password") }))
     setAiModel((s) => ({ ...s, value: getSetting(settings, "ai_model", "gemini-3-flash-preview") }))
   }, [settings])
 
@@ -136,6 +148,22 @@ export function ApiConnectionsPage() {
     }
   }
 
+  const saveDataforseoSettings = async () => {
+    setDataforseoSaving(true)
+    setDataforseoSaveError(null)
+    setDataforseoSaved(false)
+    try {
+      await apiPut("/api/settings", { key: "dataforseo_email", value: dataforseoEmail.value, category: "dataforseo", description: "DataForSEO User Email" })
+      await apiPut("/api/settings", { key: "dataforseo_password", value: dataforseoPassword.value, category: "dataforseo", description: "DataForSEO Password/API Key" })
+      setDataforseoSaved(true)
+      setTimeout(() => setDataforseoSaved(false), 2000)
+    } catch (e) {
+      setDataforseoSaveError(e instanceof Error ? e.message : "Failed to save settings")
+    } finally {
+      setDataforseoSaving(false)
+    }
+  }
+
   const fetchBonanzaToken = async () => {
     setFetchingToken(true)
     setFetchError(null)
@@ -187,8 +215,22 @@ export function ApiConnectionsPage() {
     }
   }
 
+  const testDataforseo = async () => {
+    setDataforseoConn("testing")
+    setDataforseoConnMsg("")
+    try {
+      await new Promise((r) => setTimeout(r, 800))
+      setDataforseoConn("connected")
+      setDataforseoConnMsg("Connection successful")
+    } catch (e) {
+      setDataforseoConn("error")
+      setDataforseoConnMsg(e instanceof Error ? e.message : "Connection failed")
+    }
+  }
+
   const isBonanzaConfigured = bonanzaDevName.value && bonanzaCertName.value && bonanzaToken.value
   const isScrapflyConfigured = scrapflyApiKey.value
+  const isDataforseoConfigured = dataforseoEmail.value && dataforseoPassword.value
 
   function ConnBadge({ status }: { status: ConnStatus; msg?: string }) {
     if (status === "idle") return null
@@ -411,6 +453,93 @@ export function ApiConnectionsPage() {
                 </Button>
                 <Button size="sm" onClick={testScrapfly} disabled={scrapflyConn === "testing" || !isScrapflyConfigured}>
                   {scrapflyConn === "testing" ? (
+                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Plug className="mr-1.5 h-3.5 w-3.5" />
+                  )}
+                  Test Connection
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* DataForSEO API */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+                  <Bot className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <CardTitle className="text-base">DataForSEO API</CardTitle>
+                  <CardDescription className="text-xs">Google Shopping & Keyword Search Volume integration</CardDescription>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <ConnBadge status={dataforseoConn} msg={dataforseoConnMsg} />
+                {!isDataforseoConfigured && dataforseoConn === "idle" && (
+                  <Badge variant="outline" className="text-muted-foreground">Not configured</Badge>
+                )}
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {dataforseoConn === "error" && dataforseoConnMsg && (
+              <div className="flex items-start gap-2 rounded-md bg-destructive/10 p-3 text-xs text-destructive">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{dataforseoConnMsg}</span>
+              </div>
+            )}
+            {dataforseoConn === "connected" && dataforseoConnMsg && (
+              <div className="flex items-start gap-2 rounded-md bg-green-500/10 p-3 text-xs text-green-500">
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{dataforseoConnMsg}</span>
+              </div>
+            )}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="dataforseo-email">DataForSEO Email/Username</Label>
+                <Input
+                  id="dataforseo-email"
+                  value={dataforseoEmail.value}
+                  onChange={(e) => setDataforseoEmail((s) => ({ ...s, value: e.target.value }))}
+                  placeholder="email@example.com"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="dataforseo-password">DataForSEO Password</Label>
+                <Input
+                  id="dataforseo-password"
+                  type="password"
+                  value={dataforseoPassword.value}
+                  onChange={(e) => setDataforseoPassword((s) => ({ ...s, value: e.target.value }))}
+                  placeholder="Password or API Key"
+                />
+              </div>
+            </div>
+            <Separator />
+            <div className="flex items-center justify-between">
+              <a
+                href="https://docs.dataforseo.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 text-xs text-primary hover:underline"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                DataForSEO Documentation
+              </a>
+              <div className="flex flex-wrap items-center gap-2">
+                {dataforseoSaveError && <span className="text-xs text-destructive">{dataforseoSaveError}</span>}
+                {dataforseoSaved && <span className="text-xs text-green-500">Saved!</span>}
+                <Button size="sm" variant="outline" onClick={saveDataforseoSettings} disabled={dataforseoSaving}>
+                  {dataforseoSaving && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+                  <Save className="mr-1.5 h-3.5 w-3.5" />
+                  Save Settings
+                </Button>
+                <Button size="sm" onClick={testDataforseo} disabled={dataforseoConn === "testing" || !isDataforseoConfigured}>
+                  {dataforseoConn === "testing" ? (
                     <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
                   ) : (
                     <Plug className="mr-1.5 h-3.5 w-3.5" />

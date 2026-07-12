@@ -46,6 +46,8 @@ interface PricingRules {
   bonanza_transaction_fee: number
   payment_processing_fee: number
   fixed_fee_per_transaction: number
+  google_min_search_volume: number
+  google_shopping_min_margin: number
 }
 
 const DEFAULTS: PricingRules = {
@@ -72,6 +74,8 @@ const DEFAULTS: PricingRules = {
   bonanza_transaction_fee: 3.5,
   payment_processing_fee: 2.9,
   fixed_fee_per_transaction: 0.30,
+  google_min_search_volume: 1000,
+  google_shopping_min_margin: 30,
 }
 
 function getNum(settings: AppSettings | null, key: string, fallback: number): number {
@@ -118,6 +122,8 @@ export function PricingRulesPage() {
       bonanza_transaction_fee: getNum(settings, "bonanza_transaction_fee", 3.5),
       payment_processing_fee: getNum(settings, "payment_processing_fee", 2.9),
       fixed_fee_per_transaction: getNum(settings, "fixed_fee_per_transaction", 0.30),
+      google_min_search_volume: getNum(settings, "google_min_search_volume", 1000),
+      google_shopping_min_margin: getNum(settings, "google_shopping_min_margin", 30),
     })
   }, [settings])
 
@@ -145,6 +151,8 @@ export function PricingRulesPage() {
         { key: "bonanza_transaction_fee", value: String(rules.bonanza_transaction_fee), category: "pricing", description: "Bonanza transaction fee %" },
         { key: "payment_processing_fee", value: String(rules.payment_processing_fee), category: "pricing", description: "Payment processing fee %" },
         { key: "fixed_fee_per_transaction", value: String(rules.fixed_fee_per_transaction), category: "pricing", description: "Fixed fee per transaction $" },
+        { key: "google_min_search_volume", value: String(rules.google_min_search_volume), category: "pricing", description: "Min Google monthly search volume" },
+        { key: "google_shopping_min_margin", value: String(rules.google_shopping_min_margin), category: "pricing", description: "Min Google Shopping discount margin %" },
       ]
       await Promise.all(entries.map((e) => apiPut("/api/settings", e)))
       setSaved(true)
@@ -324,6 +332,48 @@ export function PricingRulesPage() {
                   <Label htmlFor="cb-target" className="cursor-pointer font-normal">Target Price</Label>
                 </div>
               </RadioGroup>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* DataForSEO Filtering Rules */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+                <Percent className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <CardTitle className="text-base">DataForSEO Filtering Rules</CardTitle>
+                <CardDescription className="text-xs">Configure traffic and price margin filtering thresholds</CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="min-search-volume">Minimum Google Monthly Search Volume</Label>
+                <Input
+                  id="min-search-volume"
+                  type="number"
+                  min={0}
+                  value={rules.google_min_search_volume}
+                  onChange={(e) => update("google_min_search_volume", parseInt(e.target.value) || 0)}
+                />
+                <p className="text-xs text-muted-foreground">Reject items with search volume below this number</p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="shopping-min-margin">Minimum Google Shopping Price Difference (%)</Label>
+                <Input
+                  id="shopping-min-margin"
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={rules.google_shopping_min_margin}
+                  onChange={(e) => update("google_shopping_min_margin", parseFloat(e.target.value) || 0)}
+                />
+                <p className="text-xs text-muted-foreground">Minimum percentage cheaper than the lowest Google Shopping price</p>
+              </div>
             </div>
           </CardContent>
         </Card>

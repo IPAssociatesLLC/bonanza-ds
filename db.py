@@ -105,6 +105,8 @@ class Opportunity(Base):
     description = Column(Text, default="")
     image_urls = Column(Text, default="")           # pipe-separated
     category = Column(String(200), default="")
+    brand = Column(String(200), default="Unbranded")
+    upc = Column(String(200), default="brand not available")
 
     # Pricing
     source_price = Column(Float, default=0.0)
