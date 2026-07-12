@@ -669,7 +669,7 @@ def create_app(static_dir: str) -> FastAPI:
 
             brand = item.get("Product Brand") or item.get("brand") or item.get("brandName") or ""
             brand_lower = brand.strip().lower()
-            if not brand or brand_lower in ["no brand name", "not branded", "unbranded", "generic", "none", "n/a", "no brand", "brand not available"]:
+            if not brand or brand_lower in ["no brand name", "not branded", "unbranded", "generic", "none", "n/a", "no brand", "brand not available", "not available"]:
                 brand = "Unbranded"
             else:
                 brand = brand.strip()
