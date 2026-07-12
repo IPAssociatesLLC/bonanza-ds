@@ -3,7 +3,7 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from fastapi import FastAPI, APIRouter, Request, Depends, HTTPException
+from fastapi import FastAPI, APIRouter, Request, Depends, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -593,7 +593,7 @@ def create_app(static_dir: str) -> FastAPI:
         except Exception as e:
             raise HTTPException(500, f"Price suggestion failed: {str(e)}")
     @api.post("/import/walmart")
-    async def import_walmart_webhook(req: Request, db: Session = Depends(get_db)):
+    async def import_walmart_webhook(req: Request, bg_tasks: BackgroundTasks, db: Session = Depends(get_db)):
         try:
             payload = await req.json()
         except Exception as e:
@@ -608,6 +608,7 @@ def create_app(static_dir: str) -> FastAPI:
 
         imported_count = 0
         updated_count = 0
+        processed_ids = []
 
         for item in raw_products:
             title = item.get("Product Name") or item.get("title") or item.get("name")
@@ -705,7 +706,9 @@ def create_app(static_dir: str) -> FastAPI:
                 opp.brand = brand
                 opp.upc = upc
                 opp.updated_at = datetime.utcnow()
-                opp.status = "updated"
+                opp.status = "new"  # Re-evaluate it when rescanned
+                db.flush()
+                processed_ids.append(opp.id)
                 updated_count += 1
             else:
                 opp = Opportunity(
@@ -731,15 +734,21 @@ def create_app(static_dir: str) -> FastAPI:
                     updated_at=datetime.utcnow()
                 )
                 db.add(opp)
+                db.flush()
+                processed_ids.append(opp.id)
                 imported_count += 1
 
         db.commit()
+
+        # Trigger DataForSEO filter pipeline in the background
+        if processed_ids:
+            bg_tasks.add_task(run_dataforseo_filter_pipeline, processed_ids)
 
         return {
             "status": "success",
             "imported": imported_count,
             "updated": updated_count,
-            "message": f"Successfully processed {imported_count + updated_count} products."
+            "message": f"Successfully processed {imported_count + updated_count} products. Background filtering triggered."
         }
 
     # ─── Import to Bonanza ─────────────────────────────────────────────────
@@ -1296,6 +1305,123 @@ def create_app(static_dir: str) -> FastAPI:
     return app
 
 
+async def run_dataforseo_filter_pipeline(opportunity_ids: list[int]):
+    """
+    Background worker that runs the DataForSEO pipeline for imported products.
+    """
+    db = SessionLocal()
+    try:
+        # Load credentials
+        email = _get_setting(db, "dataforseo_email", "")
+        password = _get_setting(db, "dataforseo_password", "")
+        if not email or not password:
+            logger.error("DataForSEO email or password not configured. Skipping background filter.")
+            for opp_id in opportunity_ids:
+                o = db.query(Opportunity).filter(Opportunity.id == opp_id).first()
+                if o:
+                    o.status = "failed"
+                    o.description = (o.description or "") + "\n[Filter Error: DataForSEO credentials not configured]"
+            db.commit()
+            return
+
+        min_sv = _get_setting(db, "google_min_search_volume", "1000", int)
+        min_margin = _get_setting(db, "google_shopping_min_margin", "30.0", float)
+        bonanza_fee = _get_setting(db, "bonanza_google_fee", "20.0", float)
+
+        opportunities = db.query(Opportunity).filter(Opportunity.id.in_(opportunity_ids)).all()
+        if not opportunities:
+            return
+
+        # Clean titles to form search queries
+        import re
+        def clean_title(title: str) -> str:
+            text = title.lower()
+            text = re.sub(r"\b\d+kpa\b", "", text)
+            text = re.sub(r"\b\d+mins?\b", "", text)
+            text = re.sub(r"\b\d+mah\b", "", text)
+            text = re.sub(r"\b(lightweight|cordless|handheld)\b", "", text)
+            text = re.sub(r"[^\w\s-]", "", text)
+            words = text.split()
+            # Return brand + top 3 words
+            return " ".join(words[:4])
+
+        keywords = []
+        opp_by_kw = {}
+        for o in opportunities:
+            kw = clean_title(o.title)
+            keywords.append(kw)
+            opp_by_kw[kw] = o
+
+        # Step 1: Batch Search Volume Check
+        from api.dataforseo import check_search_volume, search_google_shopping_prices
+        sv_results = await check_search_volume(keywords, email, password)
+
+        for kw, o in opp_by_kw.items():
+            sv = sv_results.get(kw, 0)
+            o.monthly_search_volume = sv
+            
+            if sv < min_sv:
+                o.status = "failed"
+                o.description = (o.description or "") + f"\n[Rejected: Search volume is {sv}, which is below the minimum required of {min_sv}]"
+                continue
+
+            # Step 2: Google Shopping Price Comparison
+            shopping_data = await search_google_shopping_prices(kw, email, password)
+            if not shopping_data:
+                o.status = "failed"
+                o.description = (o.description or "") + "\n[Rejected: No competing offers found on Google Shopping]"
+                continue
+
+            lowest_price = shopping_data["low"]
+            o.google_low_price = lowest_price
+            o.google_high_price = shopping_data["high"]
+            
+            # Compute margin rule: (Lowest Price - Walmart Price) / Lowest Price * 100
+            price_gap = lowest_price - o.source_price - o.shipping_cost
+            if lowest_price > 0:
+                current_gap_pct = (price_gap / lowest_price) * 100.0
+            else:
+                current_gap_pct = 0.0
+
+            if current_gap_pct < min_margin:
+                o.status = "failed"
+                o.description = (o.description or "") + f"\n[Rejected: Price margin is {current_gap_pct:.1f}%, which is below the minimum required of {min_margin}% (Walmart Price: ${o.source_price + o.shipping_cost:.2f}, Google Shopping lowest: ${lowest_price:.2f})]"
+                continue
+
+            # If it passes, move it to Opportunities!
+            # Change origin to "automation_engine", status to "approved"
+            o.origin = "automation_engine"
+            o.status = "approved"
+            
+            # Re-calculate target price using pricing formula:
+            margin_factor = 1.0 - (bonanza_fee / 100.0) - (_get_setting(db, "default_min_margin", "30.0", float) / 100.0)
+            if margin_factor > 0.1:
+                target_price = round((o.source_price + o.shipping_cost) / margin_factor, 2)
+            else:
+                target_price = round((o.source_price + o.shipping_cost) * 1.5, 2)
+                
+            # Cap target price to be at least 1 cent below Google Shopping lowest price to stay competitive
+            if target_price >= lowest_price:
+                target_price = round(lowest_price - 0.01, 2)
+                
+            o.target_price = target_price
+            
+            # Recalculate profit metrics
+            profit = target_price - o.source_price - o.shipping_cost - (target_price * (bonanza_fee / 100.0))
+            o.final_profit = profit
+            if target_price > 0:
+                o.final_margin_pct = (profit / target_price) * 100.0
+            else:
+                o.final_margin_pct = 0.0
+
+        db.commit()
+    except Exception as e:
+        logger.error(f"Error in DataForSEO background task: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
 def _profile_dict(p: ScanProfile) -> dict:
@@ -1331,6 +1457,11 @@ def _opp_dict(o: Opportunity) -> dict:
         "cashback_amount": o.cashback_amount,
         "final_profit": o.final_profit, "final_margin_pct": o.final_margin_pct,
         "best_cashback_site": o.best_cashback_site,
+        "brand": o.brand,
+        "upc": o.upc,
+        "monthly_search_volume": o.monthly_search_volume,
+        "google_low_price": o.google_low_price,
+        "google_high_price": o.google_high_price,
         "status": o.status, "ai_title": o.ai_title, "ai_description": o.ai_description,
         "created_at": o.created_at.isoformat() if o.created_at else None,
         "updated_at": o.updated_at.isoformat() if o.updated_at else None,
