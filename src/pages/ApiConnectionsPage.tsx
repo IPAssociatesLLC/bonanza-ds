@@ -603,6 +603,44 @@ export function ApiConnectionsPage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Scraper Webhooks */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+                <Plug className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <CardTitle className="text-base">Scraper Webhooks</CardTitle>
+                <CardDescription className="text-xs">Use these URLs in your scraper extensions (e.g. W-Scraper) to export products directly into your dashboard.</CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label>Walmart Deals Webhook URL</Label>
+              <div className="flex gap-2">
+                <Input
+                  readOnly
+                  value={`${window.location.origin}/api/import/walmart`}
+                  className="bg-muted font-mono text-xs"
+                />
+                <Button 
+                  variant="outline" 
+                  onClick={() => {
+                    navigator.clipboard.writeText(`${window.location.origin}/api/import/walmart`);
+                  }}
+                >
+                  Copy
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Configure your scraper to send a POST request with the product JSON array to this URL. Imported products will appear in the <strong>Scan Results</strong> page.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   )
