@@ -45,7 +45,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import {
   Package, Eye, Upload, Ban, Sparkles, MoreVertical, Loader2, TrendingUp,
-  DollarSign, Star, Store, ShieldCheck, AlertTriangle, ExternalLink,
+  DollarSign, Star, Store, ShieldCheck, AlertTriangle, ExternalLink, Play
 } from "lucide-react"
 import type { Opportunity } from "@/types"
 
@@ -102,6 +102,8 @@ export function ScanResultsPage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [importLoading, setImportLoading] = useState(false)
+  const [triggerLoading, setTriggerLoading] = useState(false)
+  const [triggerSuccess, setTriggerSuccess] = useState<string | null>(null)
 
   const queryParams = useMemo(() => {
     const params = new URLSearchParams()
@@ -216,25 +218,60 @@ export function ScanResultsPage() {
     }
   }
 
+  async function handleTriggerScraper() {
+    setTriggerLoading(true)
+    setTriggerSuccess(null)
+    setActionError(null)
+    try {
+      const res = await apiPost<{status: string; message: string}>("/api/scraper/trigger", {})
+      setTriggerSuccess(res.message)
+      setTimeout(() => setTriggerSuccess(null), 8000)
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : "Failed to trigger cloud scraper")
+    } finally {
+      setTriggerLoading(false)
+    }
+  }
+
   return (
     <div>
       <PageHeader
         title="Manual Scan Results"
         description={`Found ${data?.total || 0} potential items from the Product Scout scanner.`}
         actions={
-          <Button
-            onClick={handleImportSelected}
-            disabled={selected.size === 0 || importLoading}
-          >
-            {importLoading ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Upload className="mr-2 h-4 w-4" />
-            )}
-            Import Selected{selected.size > 0 ? ` (${selected.size})` : ""}
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={handleTriggerScraper}
+              disabled={triggerLoading}
+            >
+              {triggerLoading ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Play className="mr-2 h-4 w-4 text-green-500" />
+              )}
+              Run Cloud Scraper
+            </Button>
+            <Button
+              onClick={handleImportSelected}
+              disabled={selected.size === 0 || importLoading}
+            >
+              {importLoading ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Upload className="mr-2 h-4 w-4" />
+              )}
+              Import Selected{selected.size > 0 ? ` (${selected.size})` : ""}
+            </Button>
+          </div>
         }
       />
+
+      {triggerSuccess && (
+        <div className="mb-4 rounded-lg border border-green-500/30 bg-green-500/10 px-4 py-3 text-sm text-green-500">
+          {triggerSuccess}
+        </div>
+      )}
 
       {actionError && (
         <div className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">

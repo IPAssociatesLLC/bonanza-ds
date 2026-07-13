@@ -599,10 +599,13 @@ def create_app(static_dir: str) -> FastAPI:
         except Exception as e:
             raise HTTPException(400, f"Invalid JSON payload: {str(e)}")
 
-        if isinstance(payload, dict):
-            raw_products = [payload]
-        elif isinstance(payload, list):
+        if isinstance(payload, list):
             raw_products = payload
+        elif isinstance(payload, dict):
+            if "data" in payload and isinstance(payload["data"], list):
+                raw_products = payload["data"]
+            else:
+                raw_products = [payload]
         else:
             raise HTTPException(400, "Payload must be a JSON object or list of objects")
 
@@ -771,6 +774,32 @@ def create_app(static_dir: str) -> FastAPI:
             "updated": updated_count,
             "message": f"Successfully processed {imported_count + updated_count} products. Background filtering triggered."
         }
+
+    @api.post("/scraper/trigger")
+    async def trigger_simplescraper(db: Session = Depends(get_db)):
+        """
+        Triggers the SimpleScraper recipe via API call.
+        """
+        api_key = _get_setting(db, "simplescraper_api_key", "9ap9UBd2RdcUtoxdQPyzxWtHW0nPqPKw")
+        recipe_id = _get_setting(db, "simplescraper_recipe_id", "4A05LweHYHLr997QKNO3")
+        
+        url = f"https://api.simplescraper.io/v1/recipes/{recipe_id}/run?apikey={api_key}"
+        
+        import httpx
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                logger.info(f"Triggering SimpleScraper recipe {recipe_id}...")
+                res = await client.post(url)
+                res.raise_for_status()
+                res_data = res.json()
+                return {
+                    "status": "success", 
+                    "message": "Scraper triggered successfully! Products will appear in Scan Results shortly.", 
+                    "data": res_data
+                }
+            except Exception as e:
+                logger.error(f"Failed to trigger SimpleScraper: {e}")
+                raise HTTPException(500, f"Scraper trigger failed: {str(e)}")
 
     # ─── Import to Bonanza ─────────────────────────────────────────────────
 
