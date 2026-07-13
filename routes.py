@@ -783,18 +783,25 @@ def create_app(static_dir: str) -> FastAPI:
         api_key = _get_setting(db, "simplescraper_api_key", "9ap9UBd2RdcUtoxdQPyzxWtHW0nPqPKw")
         recipe_id = _get_setting(db, "simplescraper_recipe_id", "4A05LweHYHLr997QKNO3")
         
-        url = f"https://api.simplescraper.io/v1/recipes/{recipe_id}/run?apikey={api_key}"
+        url = f"https://api.simplescraper.io/v1/recipes/{recipe_id}/run"
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "runAsync": True
+        }
         
         import httpx
         async with httpx.AsyncClient(timeout=30.0) as client:
             try:
-                logger.info(f"Triggering SimpleScraper recipe {recipe_id}...")
-                res = await client.post(url)
+                logger.info(f"Triggering SimpleScraper recipe {recipe_id} asynchronously...")
+                res = await client.post(url, headers=headers, json=payload)
                 res.raise_for_status()
                 res_data = res.json()
                 return {
                     "status": "success", 
-                    "message": "Scraper triggered successfully! Products will appear in Scan Results shortly.", 
+                    "message": "Cloud scraper triggered successfully! Products will appear in Scan Results shortly.", 
                     "data": res_data
                 }
             except Exception as e:
