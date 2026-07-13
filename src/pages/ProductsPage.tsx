@@ -161,7 +161,7 @@ export function ProductsPage() {
           />
         </div>
       ) : (
-        <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {filtered.map((listing) => {
             const margin = listing.price > 0 ? ((listing.price - listing.shipping_cost) / listing.price) * 100 : 0
             const sourcePrice = listing.price - listing.shipping_cost

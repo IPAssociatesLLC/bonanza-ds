@@ -118,6 +118,7 @@ class Opportunity(Base):
     google_avg_price = Column(Float, default=0.0)
     discount_pct = Column(Float, default=0.0)
     deal_duration_days = Column(Integer, default=1)
+    discount_info = Column(Text, default="")
 
     # Metrics
     monthly_sales = Column(Integer, default=0)
