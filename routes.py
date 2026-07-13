@@ -762,7 +762,14 @@ def create_app(static_dir: str) -> FastAPI:
                 processed_ids.append(opp.id)
                 imported_count += 1
 
-        db.commit()
+        try:
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            import traceback
+            tb = traceback.format_exc()
+            logger.error(f"Webhook database commit failed: {tb}")
+            raise HTTPException(500, detail={"error": str(e), "traceback": tb})
 
         # Trigger DataForSEO filter pipeline in the background
         if processed_ids:
