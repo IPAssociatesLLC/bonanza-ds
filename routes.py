@@ -797,7 +797,7 @@ def create_app(static_dir: str) -> FastAPI:
         api_key = _get_setting(db, "thunderbit_api_key", "tb_ba8b892d28b2f7edeb261d50951c8304")
         walmart_url = _get_setting(db, "walmart_target_url", "https://www.walmart.com/shop/flash-deals")
         
-        url = "https://openapi.thunderbit.com/openapi/v1/extract"
+        url = "https://openapi.thunderbit.com/openapi/v1/batch/extract"
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json"
@@ -809,6 +809,22 @@ def create_app(static_dir: str) -> FastAPI:
         
         payload = {
             "urls": [walmart_url],
+            "schema": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "title": { "type": "string", "description": "The product title or name" },
+                        "price": { "type": "number", "description": "The current discounted sale price as a number" },
+                        "original_price": { "type": "string", "description": "The original price before discount" },
+                        "savings": { "type": "string", "description": "The amount or percentage saved" },
+                        "product_url": { "type": "string", "description": "The absolute URL link to the product page" },
+                        "shipping_cost": { "type": "number", "description": "The shipping cost, 0 if free" },
+                        "image_url": { "type": "string", "description": "The product image URL" }
+                    },
+                    "required": ["title", "price", "product_url"]
+                }
+            },
             "webhook": {
                 "url": webhook_url
             }
