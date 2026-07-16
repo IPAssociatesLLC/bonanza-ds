@@ -227,7 +227,7 @@ export function ScanResultsPage() {
       setTriggerSuccess(res.message)
       setTimeout(() => setTriggerSuccess(null), 8000)
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : "Failed to trigger cloud scraper")
+      setActionError(e instanceof Error ? e.message : "Failed to trigger Thunderbit scraper")
     } finally {
       setTriggerLoading(false)
     }
@@ -250,7 +250,7 @@ export function ScanResultsPage() {
               ) : (
                 <Play className="mr-2 h-4 w-4 text-green-500" />
               )}
-              Run Cloud Scraper
+              Run Thunderbit Scraper
             </Button>
             <Button
               onClick={handleImportSelected}

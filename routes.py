@@ -602,8 +602,15 @@ def create_app(static_dir: str) -> FastAPI:
         if isinstance(payload, list):
             raw_products = payload
         elif isinstance(payload, dict):
+            # Handle standard {"data": [...]} payload
             if "data" in payload and isinstance(payload["data"], list):
                 raw_products = payload["data"]
+            # Handle Thunderbit specific nested payload: {"result": {"data": [...]}}
+            elif "result" in payload and isinstance(payload["result"], dict) and "data" in payload["result"] and isinstance(payload["result"]["data"], list):
+                raw_products = payload["result"]["data"]
+            # Handle Thunderbit array inside result
+            elif "result" in payload and isinstance(payload["result"], list):
+                raw_products = payload["result"]
             else:
                 raw_products = [payload]
         else:
@@ -783,37 +790,45 @@ def create_app(static_dir: str) -> FastAPI:
         }
 
     @api.post("/scraper/trigger")
-    async def trigger_simplescraper(db: Session = Depends(get_db)):
+    async def trigger_thunderbit(req: Request, db: Session = Depends(get_db)):
         """
-        Triggers the SimpleScraper recipe via API call.
+        Triggers the Thunderbit Web Scraper API.
         """
-        api_key = _get_setting(db, "simplescraper_api_key", "9ap9UBd2RdcUtoxdQPyzxWtHW0nPqPKw")
-        recipe_id = _get_setting(db, "simplescraper_recipe_id", "4A05LweHYHLr997QKNO3")
+        api_key = _get_setting(db, "thunderbit_api_key", "tb_ba8b892d28b2f7edeb261d50951c8304")
+        walmart_url = _get_setting(db, "walmart_target_url", "https://www.walmart.com/shop/flash-deals")
         
-        url = f"https://api.simplescraper.io/v1/recipes/{recipe_id}/run"
+        url = "https://openapi.thunderbit.com/openapi/v1/extract"
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json"
         }
+        
+        # Build the webhook URL dynamically from the incoming request's base URL
+        base_url = str(req.base_url).rstrip("/")
+        webhook_url = f"{base_url}/api/webhook/walmart"
+        
         payload = {
-            "runAsync": True
+            "urls": [walmart_url],
+            "webhook": {
+                "url": webhook_url
+            }
         }
         
         import httpx
         async with httpx.AsyncClient(timeout=30.0) as client:
             try:
-                logger.info(f"Triggering SimpleScraper recipe {recipe_id} asynchronously...")
+                logger.info(f"Triggering Thunderbit scrape for {walmart_url}...")
                 res = await client.post(url, headers=headers, json=payload)
                 res.raise_for_status()
                 res_data = res.json()
                 return {
                     "status": "success", 
-                    "message": "Cloud scraper triggered successfully! Products will appear in Scan Results shortly.", 
+                    "message": "Thunderbit scraper triggered successfully! Products will appear in Scan Results once the webhook fires.", 
                     "data": res_data
                 }
             except Exception as e:
-                logger.error(f"Failed to trigger SimpleScraper: {e}")
-                raise HTTPException(500, f"Scraper trigger failed: {str(e)}")
+                logger.error(f"Failed to trigger Thunderbit: {e}")
+                raise HTTPException(500, f"Thunderbit scraper trigger failed: {str(e)}")
 
     # ─── Import to Bonanza ─────────────────────────────────────────────────
 
