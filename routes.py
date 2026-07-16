@@ -772,11 +772,13 @@ def create_app(static_dir: str) -> FastAPI:
         try:
             db.commit()
             if imported_count > 0 or updated_count > 0:
-                from models import ActivityLog
-                db.add(ActivityLog(
-                    action="Import Thunderbit Results",
-                    details=f"Received Thunderbit webhook: Imported {imported_count} and updated {updated_count} Walmart products.",
-                    created_at=datetime.utcnow()
+                from db import ScanLog
+                db.add(ScanLog(
+                    status="completed",
+                    products_found=imported_count + updated_count,
+                    opportunities_created=imported_count,
+                    started_at=datetime.utcnow(),
+                    completed_at=datetime.utcnow()
                 ))
                 db.commit()
         except Exception as e:
