@@ -146,14 +146,16 @@ export function AdminAutomationsPage() {
     try {
       // Intelligently route Walmart URLs to the ScraperAPI Master Endpoint
       if (automation.id === "custom_scout" && automation.targetUrls.toLowerCase().includes("walmart.com")) {
-        const firstUrl = automation.targetUrls.split("\n").map(u => u.trim()).filter(u => u)[0];
-        if (!firstUrl) throw new Error("Please enter a valid Walmart URL.");
+        const urls = automation.targetUrls.split("\n").map(u => u.trim()).filter(u => u);
+        if (urls.length === 0) throw new Error("Please enter a valid Walmart URL.");
         
-        await apiPost("/api/scraper/trigger", {
-          target_url: firstUrl
-        });
+        for (const url of urls) {
+          await apiPost("/api/scraper/trigger", {
+            target_url: url
+          });
+        }
         
-        setSuccess(`Successfully triggered Walmart ScraperAPI scanner! Products will appear in the Scan Results page shortly.`);
+        setSuccess(`Successfully triggered ScraperAPI for ${urls.length} Walmart page(s)! Products will appear in the Scan Results page shortly.`);
       } else {
         // Default Scrapfly/AliExpress scanner
         const res = await apiPost("/api/scans/trigger", {

@@ -836,7 +836,14 @@ def create_app(static_dir: str) -> FastAPI:
         parsed_url = urlparse(walmart_url)
         path = parsed_url.path
         
-        base_url = str(req.base_url).rstrip("/")
+        # Ensure correct public URL for Vercel behind proxy
+        forwarded_host = req.headers.get("x-forwarded-host")
+        if forwarded_host:
+            proto = req.headers.get("x-forwarded-proto", "https")
+            base_url = f"{proto}://{forwarded_host}"
+        else:
+            base_url = str(req.base_url).rstrip("/")
+            
         webhook_url = f"{base_url}/api/import/walmart"
         
         payload = {
