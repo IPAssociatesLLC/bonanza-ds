@@ -810,7 +810,7 @@ def create_app(static_dir: str) -> FastAPI:
         api_key = _get_setting(db, "thunderbit_api_key", "tb_ba8b892d28b2f7edeb261d50951c8304")
         walmart_url = _get_setting(db, "walmart_target_url", "https://www.walmart.com/shop/flash-deals")
         
-        url = "https://openapi.thunderbit.com/openapi/v1/batch/extract"
+        url = "https://openapi.thunderbit.com/openapi/v1/batch/distill"
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json"
