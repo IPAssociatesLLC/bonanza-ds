@@ -81,6 +81,12 @@ export function ApiConnectionsPage() {
   const [dataforseoSaved, setDataforseoSaved] = useState(false)
   const [dataforseoSaveError, setDataforseoSaveError] = useState<string | null>(null)
 
+  // Thunderbit fields
+  const [thunderbitApiKey, setThunderbitApiKey] = useState<FieldState>({ value: "", saving: false, saved: false, error: null })
+  const [thunderbitSaving, setThunderbitSaving] = useState(false)
+  const [thunderbitSaved, setThunderbitSaved] = useState(false)
+  const [thunderbitSaveError, setThunderbitSaveError] = useState<string | null>(null)
+
   // AI model
   const [aiModel, setAiModel] = useState<FieldState>({ value: "gemini-3-flash-preview", saving: false, saved: false, error: null })
 
@@ -93,6 +99,7 @@ export function ApiConnectionsPage() {
     setScrapflyApiKey((s) => ({ ...s, value: getSetting(settings, "scrapfly_api_key") }))
     setDataforseoEmail((s) => ({ ...s, value: getSetting(settings, "dataforseo_email") }))
     setDataforseoPassword((s) => ({ ...s, value: getSetting(settings, "dataforseo_password") }))
+    setThunderbitApiKey((s) => ({ ...s, value: getSetting(settings, "thunderbit_api_key") }))
     setAiModel((s) => ({ ...s, value: getSetting(settings, "ai_model", "gemini-3-flash-preview") }))
   }, [settings])
 
@@ -161,6 +168,21 @@ export function ApiConnectionsPage() {
       setDataforseoSaveError(e instanceof Error ? e.message : "Failed to save settings")
     } finally {
       setDataforseoSaving(false)
+    }
+  }
+
+  const saveThunderbitSettings = async () => {
+    setThunderbitSaving(true)
+    setThunderbitSaveError(null)
+    setThunderbitSaved(false)
+    try {
+      await apiPut("/api/settings", { key: "thunderbit_api_key", value: thunderbitApiKey.value, category: "thunderbit", description: "Thunderbit API Key" })
+      setThunderbitSaved(true)
+      setTimeout(() => setThunderbitSaved(false), 2000)
+    } catch (e) {
+      setThunderbitSaveError(e instanceof Error ? e.message : "Failed to save settings")
+    } finally {
+      setThunderbitSaving(false)
     }
   }
 
@@ -551,6 +573,52 @@ export function ApiConnectionsPage() {
           </CardContent>
         </Card>
 
+        {/* Thunderbit */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
+                <Plug className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <CardTitle className="text-base">Thunderbit Web Scraper API</CardTitle>
+                <CardDescription className="text-xs">Configure access to Thunderbit for automated extractions.</CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="thunderbit-apikey">API Key</Label>
+              <Input
+                id="thunderbit-apikey"
+                type="password"
+                placeholder="tb_xxxxxxxxxxxxxxxx"
+                value={thunderbitApiKey.value}
+                onChange={(e) => setThunderbitApiKey((s) => ({ ...s, value: e.target.value }))}
+                className="font-mono text-xs sm:max-w-[400px]"
+              />
+            </div>
+
+            {thunderbitSaveError && (
+              <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive flex items-center gap-2">
+                <AlertCircle className="h-4 w-4" />
+                {thunderbitSaveError}
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              {thunderbitSaved && (
+                <span className="text-sm text-green-500 flex items-center gap-1">
+                  <CheckCircle2 className="h-4 w-4" /> Saved
+                </span>
+              )}
+              <Button onClick={saveThunderbitSettings} disabled={thunderbitSaving} className="w-[100px]">
+                {thunderbitSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* AI Provider (Gemini) */}
         <Card>
           <CardHeader>
@@ -623,13 +691,13 @@ export function ApiConnectionsPage() {
               <div className="flex gap-2">
                 <Input
                   readOnly
-                  value={`${window.location.origin}/api/import/walmart`}
+                  value="https://bonanza-ds-platform.onrender.com/api/import/walmart"
                   className="bg-muted font-mono text-xs"
                 />
                 <Button 
                   variant="outline" 
                   onClick={() => {
-                    navigator.clipboard.writeText(`${window.location.origin}/api/import/walmart`);
+                    navigator.clipboard.writeText("https://bonanza-ds-platform.onrender.com/api/import/walmart");
                   }}
                 >
                   Copy

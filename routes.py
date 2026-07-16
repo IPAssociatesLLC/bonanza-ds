@@ -771,6 +771,14 @@ def create_app(static_dir: str) -> FastAPI:
 
         try:
             db.commit()
+            if imported_count > 0 or updated_count > 0:
+                from models import ActivityLog
+                db.add(ActivityLog(
+                    action="Import Thunderbit Results",
+                    details=f"Received Thunderbit webhook: Imported {imported_count} and updated {updated_count} Walmart products.",
+                    created_at=datetime.utcnow()
+                ))
+                db.commit()
         except Exception as e:
             db.rollback()
             import traceback
@@ -805,7 +813,7 @@ def create_app(static_dir: str) -> FastAPI:
         
         # Build the webhook URL dynamically from the incoming request's base URL
         base_url = str(req.base_url).rstrip("/")
-        webhook_url = f"{base_url}/api/webhook/walmart"
+        webhook_url = f"{base_url}/api/import/walmart"
         
         payload = {
             "urls": [walmart_url],
