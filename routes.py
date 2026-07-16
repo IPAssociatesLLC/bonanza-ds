@@ -635,156 +635,156 @@ def create_app(static_dir: str) -> FastAPI:
         updated_count = 0
         processed_ids = []
 
-        for item in raw_products:
-            title = item.get("Product Name") or item.get("title") or item.get("name") or item.get("product_name")
-            if not title:
-                continue
-
-            source_product_id = item.get("itemId") or item.get("id") or item.get("productId") or item.get("product_id") or item.get("sku") or item.get("source_product_id")
-            source_url = item.get("Product URL") or item.get("url") or item.get("productUrl") or item.get("product_url") or item.get("link") or item.get("source_url") or ""
-            
-            if not source_product_id and source_url:
-                import re
-                match = re.search(r"/ip/(?:[^/]+/)?(\d+)", source_url)
-                if match:
-                    source_product_id = match.group(1)
-
-            if not source_product_id:
-                import hashlib
-                source_product_id = hashlib.md5(title.encode('utf-8')).hexdigest()[:12]
-
-            raw_price = item.get("Product Price") or item.get("Price") or item.get("price") or item.get("sale_price") or item.get("final_price") or item.get("price_active") or item.get("discount_price") or item.get("source_price") or 0.0
-            if isinstance(raw_price, str):
-                import re
-                try:
-                    m = re.search(r"([0-9]+(?:\.[0-9]+)?)", raw_price.replace(",", ""))
-                    source_price = float(m.group(1)) if m else 0.0
-                except:
-                    source_price = 0.0
-            else:
-                source_price = float(raw_price)
-
-            orig_price = item.get("Product Price Before Discount") or item.get("original_price") or item.get("price_before_discount") or item.get("price_original") or ""
-            savings = item.get("Product Savings") or item.get("savings") or item.get("discount_amount") or ""
-            discount_info_str = ""
-            if orig_price:
-                discount_info_str += f"Original: {orig_price} "
-            if savings:
-                discount_info_str += f"({savings})"
-            discount_info_str = discount_info_str.strip()
-
-            raw_shipping = item.get("shipping") or item.get("shipping_cost") or item.get("shipping_price") or 0.0
-            if isinstance(raw_shipping, str):
-                import re
-                try:
-                    m = re.search(r"([0-9]+(?:\.[0-9]+)?)", raw_shipping.replace(",", ""))
-                    shipping_cost = float(m.group(1)) if m else 0.0
-                except:
-                    shipping_cost = 0.0
-            else:
-                shipping_cost = float(raw_shipping)
-
-            raw_stock = item.get("stock") or item.get("quantity") or item.get("availability") or item.get("Product Availability") or item.get("stock_status") or 10
-            stock = 10
-            if isinstance(raw_stock, str):
-                if "out" in raw_stock.lower():
-                    stock = 0
-                else:
-                    import re
-                    m = re.search(r"(\d+)", raw_stock)
-                    stock = int(m.group(1)) if m else 10
-            elif isinstance(raw_stock, (int, float)):
-                stock = int(raw_stock)
-
-            raw_images = item.get("All Images") or item.get("Product Image") or item.get("images") or item.get("image_urls") or item.get("image") or item.get("imageUrl") or item.get("main_image") or ""
-            if isinstance(raw_images, list):
-                image_urls = "|".join(raw_images)
-            else:
-                image_urls = str(raw_images)
-
-            brand = item.get("Product Brand") or item.get("brand") or item.get("brandName") or item.get("brand_name") or ""
-            brand_lower = brand.strip().lower()
-            if not brand or brand_lower in ["no brand name", "not branded", "unbranded", "generic", "none", "n/a", "no brand", "brand not available", "not available"]:
-                brand = "Unbranded"
-            else:
-                brand = brand.strip()
-
-            upc = item.get("UPC") or item.get("upc") or item.get("barcode") or item.get("gtin") or "brand not available"
-
-            rating = float(item.get("Product Rating") or item.get("rating") or item.get("reviews_rating") or item.get("rating_average") or 0.0)
-            review_count = int(item.get("Product Reviews") or item.get("review_count") or item.get("reviews_count") or 0)
-            seller_name = item.get("Product Seller") or item.get("seller_name") or item.get("sold_by") or item.get("seller") or ""
-
-            opp = db.query(Opportunity).filter(
-                Opportunity.source_product_id == str(source_product_id),
-                Opportunity.source == "walmart"
-            ).first()
-
-            min_margin = _get_setting(db, "default_min_margin", "30.0", float)
-            bonanza_fee = _get_setting(db, "bonanza_google_fee", "20.0", float)
-            
-            margin_factor = 1.0 - (bonanza_fee / 100.0) - (min_margin / 100.0)
-            if margin_factor > 0.1:
-                target_price = round((source_price + shipping_cost) / margin_factor, 2)
-            else:
-                target_price = round((source_price + shipping_cost) * 1.5, 2)
-
-            profit = target_price - source_price - shipping_cost - (target_price * (bonanza_fee / 100.0))
-
-            if opp:
-                opp.title = title
-                opp.source_price = source_price
-                opp.shipping_cost = shipping_cost
-                opp.stock = stock
-                opp.image_urls = image_urls
-                opp.target_price = target_price
-                opp.margin_pct = min_margin
-                opp.final_profit = profit
-                opp.final_margin_pct = min_margin
-                opp.brand = brand
-                opp.upc = upc
-                opp.discount_info = discount_info_str
-                opp.rating = rating
-                opp.review_count = review_count
-                opp.seller_name = seller_name
-                opp.updated_at = datetime.utcnow()
-                opp.status = "new"  # Re-evaluate it when rescanned
-                db.flush()
-                processed_ids.append(opp.id)
-                updated_count += 1
-            else:
-                opp = Opportunity(
-                    origin="manual_scout",
-                    source="walmart",
-                    source_url=source_url,
-                    source_product_id=str(source_product_id),
-                    title=title,
-                    description=item.get("description") or item.get("product_description") or "",
-                    image_urls=image_urls,
-                    category=item.get("category") or item.get("Product Category") or "General",
-                    source_price=source_price,
-                    shipping_cost=shipping_cost,
-                    target_price=target_price,
-                    stock=stock,
-                    margin_pct=min_margin,
-                    final_profit=profit,
-                    final_margin_pct=min_margin,
-                    brand=brand,
-                    upc=upc,
-                    discount_info=discount_info_str,
-                    rating=rating,
-                    review_count=review_count,
-                    seller_name=seller_name,
-                    status="new",
-                    created_at=datetime.utcnow(),
-                    updated_at=datetime.utcnow()
-                )
-                db.add(opp)
-                db.flush()
-                processed_ids.append(opp.id)
-                imported_count += 1
-
         try:
+            for item in raw_products:
+                title = item.get("Product Name") or item.get("title") or item.get("name") or item.get("product_name")
+                if not title:
+                    continue
+
+                source_product_id = item.get("itemId") or item.get("id") or item.get("productId") or item.get("product_id") or item.get("sku") or item.get("source_product_id")
+                source_url = item.get("Product URL") or item.get("url") or item.get("productUrl") or item.get("product_url") or item.get("link") or item.get("source_url") or ""
+                
+                if not source_product_id and source_url:
+                    import re
+                    match = re.search(r"/ip/(?:[^/]+/)?(\d+)", source_url)
+                    if match:
+                        source_product_id = match.group(1)
+
+                if not source_product_id:
+                    import hashlib
+                    source_product_id = hashlib.md5(title.encode('utf-8')).hexdigest()[:12]
+
+                raw_price = item.get("Product Price") or item.get("Price") or item.get("price") or item.get("sale_price") or item.get("final_price") or item.get("price_active") or item.get("discount_price") or item.get("source_price") or 0.0
+                if isinstance(raw_price, str):
+                    import re
+                    try:
+                        m = re.search(r"([0-9]+(?:\.[0-9]+)?)", raw_price.replace(",", ""))
+                        source_price = float(m.group(1)) if m else 0.0
+                    except:
+                        source_price = 0.0
+                else:
+                    source_price = float(raw_price)
+
+                orig_price = item.get("Product Price Before Discount") or item.get("original_price") or item.get("price_before_discount") or item.get("price_original") or ""
+                savings = item.get("Product Savings") or item.get("savings") or item.get("discount_amount") or ""
+                discount_info_str = ""
+                if orig_price:
+                    discount_info_str += f"Original: {orig_price} "
+                if savings:
+                    discount_info_str += f"({savings})"
+                discount_info_str = discount_info_str.strip()
+
+                raw_shipping = item.get("shipping") or item.get("shipping_cost") or item.get("shipping_price") or 0.0
+                if isinstance(raw_shipping, str):
+                    import re
+                    try:
+                        m = re.search(r"([0-9]+(?:\.[0-9]+)?)", raw_shipping.replace(",", ""))
+                        shipping_cost = float(m.group(1)) if m else 0.0
+                    except:
+                        shipping_cost = 0.0
+                else:
+                    shipping_cost = float(raw_shipping)
+
+                raw_stock = item.get("stock") or item.get("quantity") or item.get("availability") or item.get("Product Availability") or item.get("stock_status") or 10
+                stock = 10
+                if isinstance(raw_stock, str):
+                    if "out" in raw_stock.lower():
+                        stock = 0
+                    else:
+                        import re
+                        m = re.search(r"(\d+)", raw_stock)
+                        stock = int(m.group(1)) if m else 10
+                elif isinstance(raw_stock, (int, float)):
+                    stock = int(raw_stock)
+
+                raw_images = item.get("All Images") or item.get("Product Image") or item.get("images") or item.get("image_urls") or item.get("image") or item.get("imageUrl") or item.get("main_image") or ""
+                if isinstance(raw_images, list):
+                    image_urls = "|".join(raw_images)
+                else:
+                    image_urls = str(raw_images)
+
+                brand = item.get("Product Brand") or item.get("brand") or item.get("brandName") or item.get("brand_name") or ""
+                brand_lower = brand.strip().lower()
+                if not brand or brand_lower in ["no brand name", "not branded", "unbranded", "generic", "none", "n/a", "no brand", "brand not available", "not available"]:
+                    brand = "Unbranded"
+                else:
+                    brand = brand.strip()
+
+                upc = item.get("UPC") or item.get("upc") or item.get("barcode") or item.get("gtin") or "brand not available"
+
+                rating = float(item.get("Product Rating") or item.get("rating") or item.get("reviews_rating") or item.get("rating_average") or 0.0)
+                review_count = int(item.get("Product Reviews") or item.get("review_count") or item.get("reviews_count") or 0)
+                seller_name = item.get("Product Seller") or item.get("seller_name") or item.get("sold_by") or item.get("seller") or ""
+
+                opp = db.query(Opportunity).filter(
+                    Opportunity.source_product_id == str(source_product_id),
+                    Opportunity.source == "walmart"
+                ).first()
+
+                min_margin = _get_setting(db, "default_min_margin", "30.0", float)
+                bonanza_fee = _get_setting(db, "bonanza_google_fee", "20.0", float)
+                
+                margin_factor = 1.0 - (bonanza_fee / 100.0) - (min_margin / 100.0)
+                if margin_factor > 0.1:
+                    target_price = round((source_price + shipping_cost) / margin_factor, 2)
+                else:
+                    target_price = round((source_price + shipping_cost) * 1.5, 2)
+
+                profit = target_price - source_price - shipping_cost - (target_price * (bonanza_fee / 100.0))
+
+                if opp:
+                    opp.title = title
+                    opp.source_price = source_price
+                    opp.shipping_cost = shipping_cost
+                    opp.stock = stock
+                    opp.image_urls = image_urls
+                    opp.target_price = target_price
+                    opp.margin_pct = min_margin
+                    opp.final_profit = profit
+                    opp.final_margin_pct = min_margin
+                    opp.brand = brand
+                    opp.upc = upc
+                    opp.discount_info = discount_info_str
+                    opp.rating = rating
+                    opp.review_count = review_count
+                    opp.seller_name = seller_name
+                    opp.updated_at = datetime.utcnow()
+                    opp.status = "new"  # Re-evaluate it when rescanned
+                    db.flush()
+                    processed_ids.append(opp.id)
+                    updated_count += 1
+                else:
+                    opp = Opportunity(
+                        origin="manual_scout",
+                        source="walmart",
+                        source_url=source_url,
+                        source_product_id=str(source_product_id),
+                        title=title,
+                        description=item.get("description") or item.get("product_description") or "",
+                        image_urls=image_urls,
+                        category=item.get("category") or item.get("Product Category") or "General",
+                        source_price=source_price,
+                        shipping_cost=shipping_cost,
+                        target_price=target_price,
+                        stock=stock,
+                        margin_pct=min_margin,
+                        final_profit=profit,
+                        final_margin_pct=min_margin,
+                        brand=brand,
+                        upc=upc,
+                        discount_info=discount_info_str,
+                        rating=rating,
+                        review_count=review_count,
+                        seller_name=seller_name,
+                        status="new",
+                        created_at=datetime.utcnow(),
+                        updated_at=datetime.utcnow()
+                    )
+                    db.add(opp)
+                    db.flush()
+                    processed_ids.append(opp.id)
+                    imported_count += 1
+
             db.commit()
             if imported_count > 0 or updated_count > 0:
                 from db import ScanLog
@@ -796,11 +796,20 @@ def create_app(static_dir: str) -> FastAPI:
                     completed_at=datetime.utcnow()
                 ))
                 db.commit()
+                
         except Exception as e:
             db.rollback()
             import traceback
             tb = traceback.format_exc()
             logger.error(f"Webhook database commit failed: {tb}")
+            from db import ScanLog
+            db.add(ScanLog(
+                status="failed",
+                error_message=str(e) + "\n" + tb,
+                started_at=datetime.utcnow(),
+                completed_at=datetime.utcnow()
+            ))
+            db.commit()
             raise HTTPException(500, detail={"error": str(e), "traceback": tb})
 
         # Trigger DataForSEO filter pipeline in the background
@@ -829,48 +838,19 @@ def create_app(static_dir: str) -> FastAPI:
         except Exception:
             pass
         
-        # Intelligently route to specific ScraperAPI endpoints based on the URL type
-        from urllib.parse import urlparse, parse_qs
-        import re
-        
-        parsed_url = urlparse(walmart_url)
-        path = parsed_url.path
-        
-        # Ensure correct public URL for Vercel behind proxy
-        forwarded_host = req.headers.get("x-forwarded-host")
-        if forwarded_host:
-            proto = req.headers.get("x-forwarded-proto", "https")
-            base_url = f"{proto}://{forwarded_host}"
-        else:
-            base_url = str(req.base_url).rstrip("/")
-            
-        webhook_url = f"{base_url}/api/import/walmart"
-        
+        # Use ScraperAPI's universal async jobs endpoint with autoparse
+        # This automatically handles Walmart searches, products, and categories
+        url = "https://async.scraperapi.com/jobs"
         payload = {
             "apiKey": api_key,
+            "url": walmart_url,
+            "autoparse": "true",
             "callback": {
                 "type": "webhook",
                 "url": webhook_url
             }
         }
         
-        if path.startswith("/search"):
-            # It's a search page, use the specific Search endpoint
-            query = parse_qs(parsed_url.query).get("q", [""])[0]
-            url = "https://async.scraperapi.com/structured/walmart/search"
-            payload["query"] = query
-        elif "/ip/" in path:
-            # It's a product page, use the specific Product endpoint
-            match = re.search(r"/ip/(?:[^/]+/)?(\d+)", path)
-            product_id = match.group(1) if match else ""
-            url = "https://async.scraperapi.com/structured/walmart/product"
-            payload["productId"] = product_id
-        else:
-            # Fallback for categories or flash-deals
-            url = "https://async.scraperapi.com/jobs"
-            payload["url"] = walmart_url
-            payload["autoparse"] = "true"
-            
         headers = {
             "Content-Type": "application/json"
         }

@@ -691,13 +691,13 @@ export function ApiConnectionsPage() {
               <div className="flex gap-2">
                 <Input
                   readOnly
-                  value="https://bonanza-ds-platform.onrender.com/api/import/walmart"
+                  value={`${window.location.origin}/api/import/walmart`}
                   className="bg-muted font-mono text-xs"
                 />
                 <Button 
                   variant="outline" 
                   onClick={() => {
-                    navigator.clipboard.writeText("https://bonanza-ds-platform.onrender.com/api/import/walmart");
+                    navigator.clipboard.writeText(`${window.location.origin}/api/import/walmart`);
                   }}
                 >
                   Copy
