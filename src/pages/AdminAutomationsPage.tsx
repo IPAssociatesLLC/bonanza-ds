@@ -144,17 +144,30 @@ export function AdminAutomationsPage() {
     setError(null)
     setSuccess(null)
     try {
-      const res = await apiPost("/api/scans/trigger", {
-        algorithm: automation.id,
-        max_credits: parseInt(automation.maxCredits) || 50,
-        min_margin_pct: parseFloat(automation.minMargin) || 40.0,
-        min_search_volume: parseInt(automation.minSearchVolume) || 500,
-        assumed_ctr: parseFloat(automation.assumedCtr) || 2.0,
-        assumed_conversion: parseFloat(automation.assumedConversion) || 3.0,
-        target_urls: automation.targetUrls
-      }) as Record<string, unknown>
-      
-      setSuccess(`Successfully triggered background scanner! Generated ${res.opportunities_created || 0} opportunities using ${res.credits_used || 0} API credits.`)
+      // Intelligently route Walmart URLs to the ScraperAPI Master Endpoint
+      if (automation.id === "custom_scout" && automation.targetUrls.toLowerCase().includes("walmart.com")) {
+        const firstUrl = automation.targetUrls.split("\n").map(u => u.trim()).filter(u => u)[0];
+        if (!firstUrl) throw new Error("Please enter a valid Walmart URL.");
+        
+        await apiPost("/api/scraper/trigger", {
+          target_url: firstUrl
+        });
+        
+        setSuccess(`Successfully triggered Walmart ScraperAPI scanner! Products will appear in the Scan Results page shortly.`);
+      } else {
+        // Default Scrapfly/AliExpress scanner
+        const res = await apiPost("/api/scans/trigger", {
+          algorithm: automation.id,
+          max_credits: parseInt(automation.maxCredits) || 50,
+          min_margin_pct: parseFloat(automation.minMargin) || 40.0,
+          min_search_volume: parseInt(automation.minSearchVolume) || 500,
+          assumed_ctr: parseFloat(automation.assumedCtr) || 2.0,
+          assumed_conversion: parseFloat(automation.assumedConversion) || 3.0,
+          target_urls: automation.targetUrls
+        }) as Record<string, unknown>
+        
+        setSuccess(`Successfully triggered background scanner! Generated ${res.opportunities_created || 0} opportunities using ${res.credits_used || 0} API credits.`)
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to trigger scan engine")
     } finally {

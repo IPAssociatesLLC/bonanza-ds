@@ -602,8 +602,20 @@ def create_app(static_dir: str) -> FastAPI:
         if isinstance(payload, list):
             raw_products = payload
         elif isinstance(payload, dict):
+            # Handle ScraperAPI async webhook payload
+            if "response" in payload and isinstance(payload["response"], dict):
+                body = payload["response"].get("body", {})
+                if isinstance(body, dict) and "organic_results" in body:
+                    raw_products = body["organic_results"]
+                elif isinstance(body, list):
+                    raw_products = body
+                else:
+                    raw_products = [body]
+            # Handle ScraperAPI sync/structured payload
+            elif "organic_results" in payload and isinstance(payload["organic_results"], list):
+                raw_products = payload["organic_results"]
             # Handle standard {"data": [...]} payload
-            if "data" in payload and isinstance(payload["data"], list):
+            elif "data" in payload and isinstance(payload["data"], list):
                 raw_products = payload["data"]
             # Handle Thunderbit extracted_data payload
             elif "extracted_data" in payload and isinstance(payload["extracted_data"], list):
@@ -807,52 +819,65 @@ def create_app(static_dir: str) -> FastAPI:
         """
         Triggers the Thunderbit Web Scraper API.
         """
-        api_key = _get_setting(db, "thunderbit_api_key", "tb_ba8b892d28b2f7edeb261d50951c8304")
+        api_key = _get_setting(db, "scraperapi_api_key", "040b71425d6ecc915689b43c31b2688f")
         walmart_url = _get_setting(db, "walmart_target_url", "https://www.walmart.com/shop/flash-deals")
         
-        url = "https://openapi.thunderbit.com/openapi/v1/batch/extract"
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json"
-        }
+        try:
+            payload_data = await req.json()
+            if payload_data and "target_url" in payload_data:
+                walmart_url = payload_data["target_url"]
+        except Exception:
+            pass
         
-        # Build the webhook URL dynamically from the incoming request's base URL
+        # Intelligently route to specific ScraperAPI endpoints based on the URL type
+        from urllib.parse import urlparse, parse_qs
+        import re
+        
+        parsed_url = urlparse(walmart_url)
+        path = parsed_url.path
+        
         base_url = str(req.base_url).rstrip("/")
         webhook_url = f"{base_url}/api/import/walmart"
         
         payload = {
-            "urls": [walmart_url],
-            "schema": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "title": { "type": "string", "description": "The product title or name" },
-                        "price": { "type": "number", "description": "The current discounted sale price as a number" },
-                        "original_price": { "type": "string", "description": "The original price before discount" },
-                        "savings": { "type": "string", "description": "The amount or percentage saved" },
-                        "product_url": { "type": "string", "description": "The absolute URL link to the product page" },
-                        "shipping_cost": { "type": "number", "description": "The shipping cost, 0 if free" },
-                        "image_url": { "type": "string", "description": "The product image URL" }
-                    },
-                    "required": ["title", "price", "product_url"]
-                }
-            },
-            "webhook": {
+            "apiKey": api_key,
+            "callback": {
+                "type": "webhook",
                 "url": webhook_url
             }
+        }
+        
+        if path.startswith("/search"):
+            # It's a search page, use the specific Search endpoint
+            query = parse_qs(parsed_url.query).get("q", [""])[0]
+            url = "https://async.scraperapi.com/structured/walmart/search"
+            payload["query"] = query
+        elif "/ip/" in path:
+            # It's a product page, use the specific Product endpoint
+            match = re.search(r"/ip/(?:[^/]+/)?(\d+)", path)
+            product_id = match.group(1) if match else ""
+            url = "https://async.scraperapi.com/structured/walmart/product"
+            payload["productId"] = product_id
+        else:
+            # Fallback for categories or flash-deals
+            url = "https://async.scraperapi.com/jobs"
+            payload["url"] = walmart_url
+            payload["autoparse"] = "true"
+            
+        headers = {
+            "Content-Type": "application/json"
         }
         
         import httpx
         async with httpx.AsyncClient(timeout=30.0) as client:
             try:
-                logger.info(f"Triggering Thunderbit scrape for {walmart_url}...")
+                logger.info(f"Triggering ScraperAPI async job for {walmart_url}...")
                 res = await client.post(url, headers=headers, json=payload)
                 res.raise_for_status()
                 res_data = res.json()
                 return {
                     "status": "success", 
-                    "message": "Thunderbit scraper triggered successfully! Products will appear in Scan Results once the webhook fires.", 
+                    "message": "ScraperAPI job started! Products will appear in Scan Results once the webhook fires.", 
                     "data": res_data
                 }
             except Exception as e:
