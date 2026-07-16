@@ -605,6 +605,9 @@ def create_app(static_dir: str) -> FastAPI:
             # Handle standard {"data": [...]} payload
             if "data" in payload and isinstance(payload["data"], list):
                 raw_products = payload["data"]
+            # Handle Thunderbit extracted_data payload
+            elif "extracted_data" in payload and isinstance(payload["extracted_data"], list):
+                raw_products = payload["extracted_data"]
             # Handle Thunderbit specific nested payload: {"result": {"data": [...]}}
             elif "result" in payload and isinstance(payload["result"], dict) and "data" in payload["result"] and isinstance(payload["result"]["data"], list):
                 raw_products = payload["result"]["data"]
