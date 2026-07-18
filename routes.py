@@ -833,43 +833,53 @@ def create_app(static_dir: str) -> FastAPI:
         
         try:
             payload_data = await req.json()
-            if payload_data and "target_url" in payload_data:
-                walmart_url = payload_data["target_url"]
+            # Handle multiple URLs if provided
+            if payload_data and "urls" in payload_data and isinstance(payload_data["urls"], list) and len(payload_data["urls"]) > 0:
+                target_urls = payload_data["urls"]
+            elif payload_data and "target_url" in payload_data:
+                target_urls = [payload_data["target_url"]]
+            else:
+                target_urls = [walmart_url]
         except Exception:
-            pass
+            target_urls = [walmart_url]
         
         # Use ScraperAPI's universal async jobs endpoint with autoparse
         # This automatically handles Walmart searches, products, and categories
+        webhook_url = f"{req.base_url.scheme}://{req.base_url.netloc}/api/import/walmart"
         url = "https://async.scraperapi.com/jobs"
-        payload = {
-            "apiKey": api_key,
-            "url": walmart_url,
-            "autoparse": "true",
-            "callback": {
-                "type": "webhook",
-                "url": webhook_url
-            }
-        }
-        
-        headers = {
-            "Content-Type": "application/json"
-        }
+        headers = {"Content-Type": "application/json"}
         
         import httpx
+        import asyncio
+        
         async with httpx.AsyncClient(timeout=30.0) as client:
             try:
-                logger.info(f"Triggering ScraperAPI async job for {walmart_url}...")
-                res = await client.post(url, headers=headers, json=payload)
-                res.raise_for_status()
-                res_data = res.json()
+                responses = []
+                for target in target_urls:
+                    payload = {
+                        "apiKey": api_key,
+                        "url": target,
+                        "autoparse": "true",
+                        "callback": {
+                            "type": "webhook",
+                            "url": webhook_url
+                        }
+                    }
+                    logger.info(f"Triggering ScraperAPI async job for {target}...")
+                    res = await client.post(url, headers=headers, json=payload)
+                    res.raise_for_status()
+                    responses.append(res.json())
+                    # Brief pause between triggers to respect API limits
+                    await asyncio.sleep(0.5)
+                
                 return {
                     "status": "success", 
-                    "message": "ScraperAPI job started! Products will appear in Scan Results once the webhook fires.", 
-                    "data": res_data
+                    "message": f"Started {len(target_urls)} ScraperAPI jobs! Products will appear in Scan Results once the webhooks fire.", 
+                    "data": responses
                 }
             except Exception as e:
-                logger.error(f"Failed to trigger Thunderbit: {e}")
-                raise HTTPException(500, f"Thunderbit scraper trigger failed: {str(e)}")
+                logger.error(f"Failed to trigger scraper jobs: {e}")
+                raise HTTPException(500, f"Scraper trigger failed: {str(e)}")
 
     # ─── Import to Bonanza ─────────────────────────────────────────────────
 
