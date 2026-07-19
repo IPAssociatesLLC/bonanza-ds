@@ -13,7 +13,7 @@ from sqlalchemy import desc, func, or_
 
 from db import (
     Base, engine, SessionLocal, get_db, init_db,
-    ScanProfile, Opportunity, Listing, CashbackSite, Setting, ScanLog, ScanResult,
+    ScanProfile, Opportunity, Listing, CashbackSite, Setting, ScanLog, ScanResult, WalmartProduct,
 )
 from bonanza_client import BonanzaClient
 from scrapfly_client import ScrapflyClient, normalize_aliexpress_product
@@ -493,16 +493,39 @@ def create_app(static_dir: str) -> FastAPI:
         offset: int = 0,
         db: Session = Depends(get_db),
     ):
-        q = db.query(Opportunity).filter(Opportunity.origin == 'manual_scout')
+        q = db.query(WalmartProduct)
         if status:
-            q = q.filter(Opportunity.status == status)
-        if source:
-            q = q.filter(Opportunity.source == source)
+            q = q.filter(WalmartProduct.status == status)
         if min_margin is not None:
-            q = q.filter(Opportunity.margin_pct >= min_margin)
+            q = q.filter(WalmartProduct.margin_pct >= min_margin)
         total = q.count()
-        items = q.order_by(desc(Opportunity.created_at)).offset(offset).limit(limit).all()
-        return {"items": [_opp_dict(o) for o in items], "total": total}
+        items = q.order_by(desc(WalmartProduct.created_at)).offset(offset).limit(limit).all()
+        def _wp_dict(r):
+            return {
+                "id": r.id,
+                "source": "walmart",
+                "source_product_id": r.source_product_id,
+                "source_url": r.source_url,
+                "title": r.title,
+                "image_urls": r.image_urls,
+                "category": r.category,
+                "brand": r.brand,
+                "source_price": r.source_price,
+                "shipping_cost": 0.0,
+                "target_price": r.target_price,
+                "margin_pct": r.margin_pct,
+                "final_profit": r.final_profit,
+                "cashback_rate": r.cashback_rate,
+                "cashback_amount": r.cashback_amount,
+                "best_cashback_site": r.best_cashback_site,
+                "rating": r.rating,
+                "review_count": r.review_count,
+                "stock": r.stock,
+                "status": r.status,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+                "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+            }
+        return {"items": [_wp_dict(r) for r in items], "total": total}
 
 
     @api.get("/opportunities/{opp_id}")
@@ -817,9 +840,8 @@ def create_app(static_dir: str) -> FastAPI:
                 review_count = int(item.get("Product Reviews") or item.get("review_count") or item.get("reviews_count") or 0)
                 seller_name = item.get("Product Seller") or item.get("seller_name") or item.get("sold_by") or item.get("seller") or ""
 
-                opp = db.query(Opportunity).filter(
-                    Opportunity.source_product_id == str(source_product_id),
-                    Opportunity.source == "walmart"
+                wp = db.query(WalmartProduct).filter(
+                    WalmartProduct.source_product_id == str(source_product_id)
                 ).first()
 
                 min_margin = _get_setting(db, "default_min_margin", "30.0", float)
@@ -831,40 +853,34 @@ def create_app(static_dir: str) -> FastAPI:
                     target_price = round((source_price + shipping_cost) * 1.5, 2)
                 profit = round(target_price - source_price - shipping_cost - (target_price * (bonanza_fee / 100.0)), 2)
 
-                if opp:
-                    opp.title = title
-                    opp.source_price = source_price
-                    opp.shipping_cost = shipping_cost
-                    opp.stock = stock
-                    opp.image_urls = image_urls
-                    opp.target_price = target_price
-                    opp.margin_pct = min_margin
-                    opp.final_profit = profit
-                    opp.final_margin_pct = min_margin
-                    opp.brand = brand
-                    opp.rating = rating
-                    opp.review_count = review_count
-                    opp.updated_at = datetime.utcnow()
-                    opp.status = "new"
+                if wp:
+                    wp.title = title
+                    wp.source_price = source_price
+                    wp.stock = stock
+                    wp.image_urls = image_urls
+                    wp.target_price = target_price
+                    wp.margin_pct = min_margin
+                    wp.final_profit = profit
+                    wp.brand = brand
+                    wp.rating = rating
+                    wp.review_count = review_count
+                    wp.updated_at = datetime.utcnow()
+                    wp.status = "new"
                     db.flush()
-                    processed_ids.append(opp.id)
+                    processed_ids.append(wp.id)
                     updated_count += 1
                 else:
-                    opp = Opportunity(
-                        origin="manual_scout",
-                        source="walmart",
+                    wp = WalmartProduct(
+                        title=title,
                         source_url=source_url,
                         source_product_id=str(source_product_id),
-                        title=title,
                         image_urls=image_urls,
                         category=item.get("category") or item.get("Product Category") or "General",
                         brand=brand,
                         source_price=source_price,
-                        shipping_cost=shipping_cost,
                         target_price=target_price,
                         margin_pct=min_margin,
                         final_profit=profit,
-                        final_margin_pct=min_margin,
                         rating=rating,
                         review_count=review_count,
                         stock=stock,
@@ -872,9 +888,9 @@ def create_app(static_dir: str) -> FastAPI:
                         created_at=datetime.utcnow(),
                         updated_at=datetime.utcnow()
                     )
-                    db.add(opp)
+                    db.add(wp)
                     db.flush()
-                    processed_ids.append(opp.id)
+                    processed_ids.append(wp.id)
                     imported_count += 1
 
             db.commit()

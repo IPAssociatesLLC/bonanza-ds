@@ -181,6 +181,32 @@ class ScanResult(Base):
     updated_at = Column(DateTime, default=datetime.utcnow)
 
 
+class WalmartProduct(Base):
+    """Walmart products received from the scraper webhook — shown on Scan Results page."""
+    __tablename__ = "walmart_products"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    title = Column(Text, nullable=False)
+    source_price = Column(Float, default=0.0)
+    target_price = Column(Float, default=0.0)
+    source_url = Column(Text, default="")
+    source_product_id = Column(String(200), default="")
+    image_urls = Column(Text, default="")
+    category = Column(String(200), default="General")
+    brand = Column(String(200), default="Unbranded")
+    rating = Column(Float, default=0.0)
+    review_count = Column(Integer, default=0)
+    stock = Column(Integer, default=10)
+    margin_pct = Column(Float, default=0.0)
+    final_profit = Column(Float, default=0.0)
+    cashback_rate = Column(Float, default=0.0)
+    cashback_amount = Column(Float, default=0.0)
+    best_cashback_site = Column(String(200), default="")
+    status = Column(String(30), default="new")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+
+
 class Listing(Base):
     __tablename__ = "listings"
 
