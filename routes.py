@@ -599,104 +599,133 @@ def create_app(static_dir: str) -> FastAPI:
         except Exception as e:
             raise HTTPException(400, f"Invalid JSON payload: {str(e)}")
 
+        import re as _re
+        import json as _json
+
+        def _extract_walmart_products_from_html(html: str) -> list:
+            """Fast Walmart product extractor — no catastrophic-backtracking regex."""
+            products = []
+            try:
+                # Step 1: find __WML_REDUX_INITIAL_STATE__ by plain string search
+                marker = "__WML_REDUX_INITIAL_STATE__"
+                idx = html.find(marker)
+                if idx == -1:
+                    logger.warning("__WML_REDUX_INITIAL_STATE__ not found in HTML")
+                else:
+                    # Find the opening brace
+                    brace_start = html.find("{", idx + len(marker))
+                    if brace_start != -1:
+                        # Walk forward counting braces to find matching close
+                        depth = 0
+                        brace_end = brace_start
+                        for i, ch in enumerate(html[brace_start:brace_start + 5_000_000], start=brace_start):
+                            if ch == "{":
+                                depth += 1
+                            elif ch == "}":
+                                depth -= 1
+                                if depth == 0:
+                                    brace_end = i
+                                    break
+                        state_json = html[brace_start:brace_end + 1]
+                        state = _json.loads(state_json)
+                        # Try multiple known Walmart page structures
+                        items_data = []
+                        preso_items = state.get("preso", {}).get("items", [])
+                        if preso_items:
+                            items_data = preso_items
+                        else:
+                            stacks = state.get("search", {}).get("searchResult", {}).get("itemStacks", [])
+                            if stacks:
+                                items_data = stacks[0].get("items", [])
+                        if not items_data:
+                            modules = state.get("tempo", {}).get("modules", [])
+                            for m in modules:
+                                configs = m.get("configs", {})
+                                prods = configs.get("products", []) or configs.get("items", [])
+                                if prods:
+                                    items_data = prods
+                                    break
+
+                        for it in items_data:
+                            prod = it.get("item", it) if isinstance(it.get("item"), dict) else it
+                            name = (prod.get("name") or prod.get("title") or prod.get("productName") or "").strip()
+                            if not name:
+                                continue
+                            price_info = prod.get("priceInfo", {}) or {}
+                            price = (
+                                (price_info.get("currentPrice") or {}).get("price")
+                                or (price_info.get("wasPrice") or {}).get("price")
+                                or prod.get("price") or prod.get("salePrice") or 0.0
+                            )
+                            image = ((prod.get("imageInfo") or {}).get("thumbnailUrl") or prod.get("image") or "")
+                            url_path = prod.get("canonicalUrl") or prod.get("productUrl") or ""
+                            full_url = f"https://www.walmart.com{url_path}" if url_path.startswith("/") else url_path
+                            prod_id = prod.get("usItemId") or prod.get("itemId") or prod.get("id") or ""
+                            products.append({
+                                "title": name,
+                                "price": float(price) if price else 0.0,
+                                "source_url": full_url,
+                                "source_product_id": str(prod_id),
+                                "image": image,
+                                "source": "walmart",
+                            })
+
+                # Step 2: fallback regex scrape if state extraction returned nothing
+                if not products:
+                    logger.warning("State extraction returned 0 items — trying regex fallback")
+                    names = _re.findall(r'"name"\s*:\s*"([^"]{10,150})"', html)
+                    prices = _re.findall(r'"price"\s*:\s*([\d.]+)', html)
+                    images = _re.findall(r'"thumbnailUrl"\s*:\s*"([^"]+)"', html)
+                    urls_found = _re.findall(r'"canonicalUrl"\s*:\s*"(/ip/[^"]+)"', html)
+                    seen = set()
+                    for i, name in enumerate(names[:100]):
+                        if name in seen:
+                            continue
+                        seen.add(name)
+                        products.append({
+                            "title": name,
+                            "price": float(prices[i]) if i < len(prices) else 0.0,
+                            "source_url": f"https://www.walmart.com{urls_found[i]}" if i < len(urls_found) else "",
+                            "image": images[i] if i < len(images) else "",
+                            "source": "walmart",
+                        })
+            except Exception as parse_err:
+                logger.error(f"Walmart HTML parse error: {parse_err}")
+            return products
+
+        def _is_html(s) -> bool:
+            return isinstance(s, str) and ("<!DOCTYPE" in s[:500] or "<html" in s[:500].lower())
+
         if isinstance(payload, list):
             raw_products = payload
         elif isinstance(payload, dict):
-            # ── ScraperAPI async webhook: rendered HTML in response.body ──────────
+            # ── ScraperAPI async webhook: {"response": {"body": "<html>..."}} ───
             if "response" in payload and isinstance(payload["response"], dict):
                 body = payload["response"].get("body", "")
-                if isinstance(body, str) and ("<!DOCTYPE" in body or "<html" in body.lower()):
-                    # ScraperAPI returned full rendered HTML — extract the embedded
-                    # __WML_REDUX_INITIAL_STATE__ JSON that Walmart bakes into the page
-                    import re as _re
-                    import json as _json
-                    raw_products = []
-                    try:
-                        # Walmart embeds product data in a script tag as:
-                        # __WML_REDUX_INITIAL_STATE__ = {...}
-                        match = _re.search(
-                            r'__WML_REDUX_INITIAL_STATE__\s*=\s*(\{.*?\});?\s*</script>',
-                            body, _re.DOTALL
-                        )
-                        if match:
-                            state = _json.loads(match.group(1))
-                            # Products live at different paths depending on page type
-                            items_data = (
-                                state.get("preso", {}).get("items", [])
-                                or state.get("search", {}).get("searchResult", {}).get("itemStacks", [{}])[0].get("items", [])
-                                or state.get("tempo", {}).get("modules", [{}])[0].get("configs", {}).get("products", [])
-                            )
-                            for it in items_data:
-                                # Flatten nested product object if needed
-                                prod = it.get("item", it) if isinstance(it.get("item"), dict) else it
-                                name = (prod.get("name") or prod.get("title") or prod.get("productName") or "").strip()
-                                if not name:
-                                    continue
-                                price_info = prod.get("priceInfo", {}) or {}
-                                price = (
-                                    price_info.get("currentPrice", {}).get("price")
-                                    or price_info.get("wasPrice", {}).get("price")
-                                    or prod.get("price")
-                                    or prod.get("salePrice")
-                                    or 0.0
-                                )
-                                image = (prod.get("imageInfo", {}) or {}).get("thumbnailUrl") or prod.get("image") or ""
-                                url_path = prod.get("canonicalUrl") or prod.get("productUrl") or ""
-                                full_url = f"https://www.walmart.com{url_path}" if url_path.startswith("/") else url_path
-                                prod_id = prod.get("usItemId") or prod.get("itemId") or prod.get("id") or ""
-                                rating = float((prod.get("rating", {}) or {}).get("averageRating") or prod.get("rating") or 0.0)
-                                reviews = int((prod.get("rating", {}) or {}).get("numberOfReviews") or prod.get("reviewCount") or 0)
-                                avail = "In stock" if prod.get("availabilityStatusV2", {}).get("display", "").lower() == "in stock" else "In stock"
-                                raw_products.append({
-                                    "title": name,
-                                    "price": price,
-                                    "source_url": full_url,
-                                    "source_product_id": str(prod_id),
-                                    "image": image,
-                                    "availability": avail,
-                                    "rating": rating,
-                                    "review_count": reviews,
-                                    "source": "walmart",
-                                })
-                        if not raw_products:
-                            logger.warning("__WML_REDUX_INITIAL_STATE__ not found or empty — falling back to HTML tile scraping")
-                            # Fallback: scrape product tile data-attributes from HTML
-                            names = _re.findall(r'"name"\s*:\s*"([^"]{10,150})"', body)
-                            prices = _re.findall(r'"price"\s*:\s*([\d.]+)', body)
-                            images = _re.findall(r'"thumbnailUrl"\s*:\s*"([^"]+)"', body)
-                            urls_found = _re.findall(r'"canonicalUrl"\s*:\s*"(/ip/[^"]+)"', body)
-                            for i, name in enumerate(names[:50]):
-                                raw_products.append({
-                                    "title": name,
-                                    "price": float(prices[i]) if i < len(prices) else 0.0,
-                                    "source_url": f"https://www.walmart.com{urls_found[i]}" if i < len(urls_found) else "",
-                                    "image": images[i] if i < len(images) else "",
-                                    "source": "walmart",
-                                })
-                    except Exception as parse_err:
-                        logger.error(f"Failed to parse Walmart HTML state: {parse_err}")
-                        raw_products = []
+                if _is_html(body):
+                    raw_products = _extract_walmart_products_from_html(body)
                 elif isinstance(body, dict) and "organic_results" in body:
                     raw_products = body["organic_results"]
                 elif isinstance(body, list):
                     raw_products = body
                 else:
                     raw_products = [body] if isinstance(body, dict) else []
-            # Handle ScraperAPI sync/structured payload
+            # ── ScraperAPI DataPipeline resend: {"input": "url", "result": "<html>..."} ─
+            elif "result" in payload and _is_html(payload["result"]):
+                raw_products = _extract_walmart_products_from_html(payload["result"])
+            # ── Standard parsed formats ──────────────────────────────────────────
             elif "organic_results" in payload and isinstance(payload["organic_results"], list):
                 raw_products = payload["organic_results"]
-            # Handle standard {"data": [...]} payload
             elif "data" in payload and isinstance(payload["data"], list):
                 raw_products = payload["data"]
-            # Handle Thunderbit extracted_data payload
             elif "extracted_data" in payload and isinstance(payload["extracted_data"], list):
                 raw_products = payload["extracted_data"]
-            # Handle Thunderbit specific nested payload: {"result": {"data": [...]}}
             elif "result" in payload and isinstance(payload["result"], dict) and "data" in payload["result"] and isinstance(payload["result"]["data"], list):
                 raw_products = payload["result"]["data"]
-            # Handle Thunderbit array inside result
             elif "result" in payload and isinstance(payload["result"], list):
                 raw_products = payload["result"]
+            elif "products" in payload and isinstance(payload["products"], list):
+                raw_products = payload["products"]
             else:
                 raw_products = [payload]
         else:
