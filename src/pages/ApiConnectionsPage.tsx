@@ -81,11 +81,11 @@ export function ApiConnectionsPage() {
   const [dataforseoSaved, setDataforseoSaved] = useState(false)
   const [dataforseoSaveError, setDataforseoSaveError] = useState<string | null>(null)
 
-  // Thunderbit fields
-  const [thunderbitApiKey, setThunderbitApiKey] = useState<FieldState>({ value: "", saving: false, saved: false, error: null })
-  const [thunderbitSaving, setThunderbitSaving] = useState(false)
-  const [thunderbitSaved, setThunderbitSaved] = useState(false)
-  const [thunderbitSaveError, setThunderbitSaveError] = useState<string | null>(null)
+  // ScraperAPI fields
+  const [scraperApiKey, setScraperApiKey] = useState<FieldState>({ value: "", saving: false, saved: false, error: null })
+  const [scraperApiSaving, setScraperApiSaving] = useState(false)
+  const [scraperApiSaved, setScraperApiSaved] = useState(false)
+  const [scraperApiSaveError, setScraperApiSaveError] = useState<string | null>(null)
 
   // AI model
   const [aiModel, setAiModel] = useState<FieldState>({ value: "gemini-3-flash-preview", saving: false, saved: false, error: null })
@@ -99,7 +99,7 @@ export function ApiConnectionsPage() {
     setScrapflyApiKey((s) => ({ ...s, value: getSetting(settings, "scrapfly_api_key") }))
     setDataforseoEmail((s) => ({ ...s, value: getSetting(settings, "dataforseo_email") }))
     setDataforseoPassword((s) => ({ ...s, value: getSetting(settings, "dataforseo_password") }))
-    setThunderbitApiKey((s) => ({ ...s, value: getSetting(settings, "thunderbit_api_key") }))
+    setScraperApiKey((s) => ({ ...s, value: getSetting(settings, "scraperapi_api_key") }))
     setAiModel((s) => ({ ...s, value: getSetting(settings, "ai_model", "gemini-3-flash-preview") }))
   }, [settings])
 
@@ -171,18 +171,18 @@ export function ApiConnectionsPage() {
     }
   }
 
-  const saveThunderbitSettings = async () => {
-    setThunderbitSaving(true)
-    setThunderbitSaveError(null)
-    setThunderbitSaved(false)
+  const saveScraperApiSettings = async () => {
+    setScraperApiSaving(true)
+    setScraperApiSaveError(null)
+    setScraperApiSaved(false)
     try {
-      await apiPut("/api/settings", { key: "thunderbit_api_key", value: thunderbitApiKey.value, category: "thunderbit", description: "Thunderbit API Key" })
-      setThunderbitSaved(true)
-      setTimeout(() => setThunderbitSaved(false), 2000)
+      await apiPut("/api/settings", { key: "scraperapi_api_key", value: scraperApiKey.value, category: "scraper", description: "ScraperAPI API Key" })
+      setScraperApiSaved(true)
+      setTimeout(() => setScraperApiSaved(false), 2000)
     } catch (e) {
-      setThunderbitSaveError(e instanceof Error ? e.message : "Failed to save settings")
+      setScraperApiSaveError(e instanceof Error ? e.message : "Failed to save settings")
     } finally {
-      setThunderbitSaving(false)
+      setScraperApiSaving(false)
     }
   }
 
@@ -573,7 +573,7 @@ export function ApiConnectionsPage() {
           </CardContent>
         </Card>
 
-        {/* Thunderbit */}
+        {/* ScraperAPI */}
         <Card>
           <CardHeader>
             <div className="flex items-center gap-3">
@@ -581,39 +581,39 @@ export function ApiConnectionsPage() {
                 <Plug className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <CardTitle className="text-base">Thunderbit Web Scraper API</CardTitle>
-                <CardDescription className="text-xs">Configure access to Thunderbit for automated extractions.</CardDescription>
+                <CardTitle className="text-base">ScraperAPI</CardTitle>
+                <CardDescription className="text-xs">API key used to scrape Walmart Flash Deals and other product sources.</CardDescription>
               </div>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="thunderbit-apikey">API Key</Label>
+              <Label htmlFor="scraperapi-apikey">API Key</Label>
               <Input
-                id="thunderbit-apikey"
+                id="scraperapi-apikey"
                 type="password"
-                placeholder="tb_xxxxxxxxxxxxxxxx"
-                value={thunderbitApiKey.value}
-                onChange={(e) => setThunderbitApiKey((s) => ({ ...s, value: e.target.value }))}
+                placeholder="040b71xxxxxxxxxxxxxxxxxxxxxx"
+                value={scraperApiKey.value}
+                onChange={(e) => setScraperApiKey((s) => ({ ...s, value: e.target.value }))}
                 className="font-mono text-xs sm:max-w-[400px]"
               />
             </div>
 
-            {thunderbitSaveError && (
+            {scraperApiSaveError && (
               <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive flex items-center gap-2">
                 <AlertCircle className="h-4 w-4" />
-                {thunderbitSaveError}
+                {scraperApiSaveError}
               </div>
             )}
 
             <div className="flex items-center justify-end gap-2 pt-2">
-              {thunderbitSaved && (
+              {scraperApiSaved && (
                 <span className="text-sm text-green-500 flex items-center gap-1">
                   <CheckCircle2 className="h-4 w-4" /> Saved
                 </span>
               )}
-              <Button onClick={saveThunderbitSettings} disabled={thunderbitSaving} className="w-[100px]">
-                {thunderbitSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}
+              <Button onClick={saveScraperApiSettings} disabled={scraperApiSaving} className="w-[100px]">
+                {scraperApiSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}
               </Button>
             </div>
           </CardContent>

@@ -602,15 +602,86 @@ def create_app(static_dir: str) -> FastAPI:
         if isinstance(payload, list):
             raw_products = payload
         elif isinstance(payload, dict):
-            # Handle ScraperAPI async webhook payload
+            # ── ScraperAPI async webhook: rendered HTML in response.body ──────────
             if "response" in payload and isinstance(payload["response"], dict):
-                body = payload["response"].get("body", {})
-                if isinstance(body, dict) and "organic_results" in body:
+                body = payload["response"].get("body", "")
+                if isinstance(body, str) and ("<!DOCTYPE" in body or "<html" in body.lower()):
+                    # ScraperAPI returned full rendered HTML — extract the embedded
+                    # __WML_REDUX_INITIAL_STATE__ JSON that Walmart bakes into the page
+                    import re as _re
+                    import json as _json
+                    raw_products = []
+                    try:
+                        # Walmart embeds product data in a script tag as:
+                        # __WML_REDUX_INITIAL_STATE__ = {...}
+                        match = _re.search(
+                            r'__WML_REDUX_INITIAL_STATE__\s*=\s*(\{.*?\});?\s*</script>',
+                            body, _re.DOTALL
+                        )
+                        if match:
+                            state = _json.loads(match.group(1))
+                            # Products live at different paths depending on page type
+                            items_data = (
+                                state.get("preso", {}).get("items", [])
+                                or state.get("search", {}).get("searchResult", {}).get("itemStacks", [{}])[0].get("items", [])
+                                or state.get("tempo", {}).get("modules", [{}])[0].get("configs", {}).get("products", [])
+                            )
+                            for it in items_data:
+                                # Flatten nested product object if needed
+                                prod = it.get("item", it) if isinstance(it.get("item"), dict) else it
+                                name = (prod.get("name") or prod.get("title") or prod.get("productName") or "").strip()
+                                if not name:
+                                    continue
+                                price_info = prod.get("priceInfo", {}) or {}
+                                price = (
+                                    price_info.get("currentPrice", {}).get("price")
+                                    or price_info.get("wasPrice", {}).get("price")
+                                    or prod.get("price")
+                                    or prod.get("salePrice")
+                                    or 0.0
+                                )
+                                image = (prod.get("imageInfo", {}) or {}).get("thumbnailUrl") or prod.get("image") or ""
+                                url_path = prod.get("canonicalUrl") or prod.get("productUrl") or ""
+                                full_url = f"https://www.walmart.com{url_path}" if url_path.startswith("/") else url_path
+                                prod_id = prod.get("usItemId") or prod.get("itemId") or prod.get("id") or ""
+                                rating = float((prod.get("rating", {}) or {}).get("averageRating") or prod.get("rating") or 0.0)
+                                reviews = int((prod.get("rating", {}) or {}).get("numberOfReviews") or prod.get("reviewCount") or 0)
+                                avail = "In stock" if prod.get("availabilityStatusV2", {}).get("display", "").lower() == "in stock" else "In stock"
+                                raw_products.append({
+                                    "title": name,
+                                    "price": price,
+                                    "source_url": full_url,
+                                    "source_product_id": str(prod_id),
+                                    "image": image,
+                                    "availability": avail,
+                                    "rating": rating,
+                                    "review_count": reviews,
+                                    "source": "walmart",
+                                })
+                        if not raw_products:
+                            logger.warning("__WML_REDUX_INITIAL_STATE__ not found or empty — falling back to HTML tile scraping")
+                            # Fallback: scrape product tile data-attributes from HTML
+                            names = _re.findall(r'"name"\s*:\s*"([^"]{10,150})"', body)
+                            prices = _re.findall(r'"price"\s*:\s*([\d.]+)', body)
+                            images = _re.findall(r'"thumbnailUrl"\s*:\s*"([^"]+)"', body)
+                            urls_found = _re.findall(r'"canonicalUrl"\s*:\s*"(/ip/[^"]+)"', body)
+                            for i, name in enumerate(names[:50]):
+                                raw_products.append({
+                                    "title": name,
+                                    "price": float(prices[i]) if i < len(prices) else 0.0,
+                                    "source_url": f"https://www.walmart.com{urls_found[i]}" if i < len(urls_found) else "",
+                                    "image": images[i] if i < len(images) else "",
+                                    "source": "walmart",
+                                })
+                    except Exception as parse_err:
+                        logger.error(f"Failed to parse Walmart HTML state: {parse_err}")
+                        raw_products = []
+                elif isinstance(body, dict) and "organic_results" in body:
                     raw_products = body["organic_results"]
                 elif isinstance(body, list):
                     raw_products = body
                 else:
-                    raw_products = [body]
+                    raw_products = [body] if isinstance(body, dict) else []
             # Handle ScraperAPI sync/structured payload
             elif "organic_results" in payload and isinstance(payload["organic_results"], list):
                 raw_products = payload["organic_results"]
@@ -824,61 +895,63 @@ def create_app(static_dir: str) -> FastAPI:
         }
 
     @api.post("/scraper/trigger")
-    async def trigger_thunderbit(req: Request, db: Session = Depends(get_db)):
+    async def trigger_walmart_scraper(req: Request, db: Session = Depends(get_db)):
         """
-        Triggers the Thunderbit Web Scraper API.
+        Triggers ScraperAPI with JavaScript rendering to scrape Walmart Flash Deals.
+        Uses render=true (NOT autoparse) so we get the real rendered HTML back,
+        which contains the __WML_REDUX_INITIAL_STATE__ embedded JSON with product data.
+        ScraperAPI sends the result back to our /api/import/walmart webhook asynchronously.
         """
         api_key = _get_setting(db, "scraperapi_api_key", "040b71425d6ecc915689b43c31b2688f")
-        walmart_url = _get_setting(db, "walmart_target_url", "https://www.walmart.com/shop/flash-deals")
-        
+        default_url = _get_setting(db, "walmart_target_url", "https://www.walmart.com/shop/deals/flash-deals")
+
         try:
             payload_data = await req.json()
-            # Handle multiple URLs if provided
             if payload_data and "urls" in payload_data and isinstance(payload_data["urls"], list) and len(payload_data["urls"]) > 0:
                 target_urls = payload_data["urls"]
             elif payload_data and "target_url" in payload_data:
                 target_urls = [payload_data["target_url"]]
             else:
-                target_urls = [walmart_url]
+                target_urls = [default_url]
         except Exception:
-            target_urls = [walmart_url]
-        
-        # Use ScraperAPI's universal async jobs endpoint with autoparse
-        # This automatically handles Walmart searches, products, and categories
+            target_urls = [default_url]
+
+        # Build the webhook URL that ScraperAPI will POST results back to
         webhook_url = f"{req.base_url.scheme}://{req.base_url.netloc}/api/import/walmart"
-        url = "https://async.scraperapi.com/jobs"
-        headers = {"Content-Type": "application/json"}
-        
+
         import httpx
         import asyncio
-        
+
         async with httpx.AsyncClient(timeout=30.0) as client:
             try:
                 responses = []
                 for target in target_urls:
+                    # Use render=true WITHOUT autoparse so ScraperAPI returns the
+                    # full JavaScript-rendered HTML. The __WML_REDUX_INITIAL_STATE__
+                    # embedded JSON in that HTML contains the real product data.
                     payload = {
                         "apiKey": api_key,
                         "url": target,
-                        "autoparse": "true",
+                        "render": "true",
+                        "country_code": "us",
                         "callback": {
                             "type": "webhook",
                             "url": webhook_url
                         }
                     }
-                    logger.info(f"Triggering ScraperAPI async job for {target}...")
-                    res = await client.post(url, headers=headers, json=payload)
+                    logger.info(f"Triggering ScraperAPI render job for {target} -> webhook {webhook_url}")
+                    res = await client.post("https://async.scraperapi.com/jobs", headers={"Content-Type": "application/json"}, json=payload)
                     res.raise_for_status()
                     responses.append(res.json())
-                    # Brief pause between triggers to respect API limits
                     await asyncio.sleep(0.5)
-                
+
                 return {
-                    "status": "success", 
-                    "message": f"Started {len(target_urls)} ScraperAPI jobs! Products will appear in Scan Results once the webhooks fire.", 
+                    "status": "success",
+                    "message": f"Started {len(target_urls)} ScraperAPI render job(s). Products will appear in Scan Results once ScraperAPI finishes and calls back.",
                     "data": responses
                 }
             except Exception as e:
-                logger.error(f"Failed to trigger scraper jobs: {e}")
+                logger.error(f"Failed to trigger ScraperAPI jobs: {e}")
                 raise HTTPException(500, f"Scraper trigger failed: {str(e)}")
 
     # ─── Import to Bonanza ─────────────────────────────────────────────────
