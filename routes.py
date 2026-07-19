@@ -13,7 +13,7 @@ from sqlalchemy import desc, func, or_
 
 from db import (
     Base, engine, SessionLocal, get_db, init_db,
-    ScanProfile, Opportunity, Listing, CashbackSite, Setting, ScanLog,
+    ScanProfile, Opportunity, Listing, CashbackSite, Setting, ScanLog, ScanResult,
 )
 from bonanza_client import BonanzaClient
 from scrapfly_client import ScrapflyClient, normalize_aliexpress_product
@@ -493,16 +493,42 @@ def create_app(static_dir: str) -> FastAPI:
         offset: int = 0,
         db: Session = Depends(get_db),
     ):
-        q = db.query(Opportunity).filter(Opportunity.origin == 'manual_scout')
+        q = db.query(ScanResult)
         if status:
-            q = q.filter(Opportunity.status == status)
+            q = q.filter(ScanResult.status == status)
         if source:
-            q = q.filter(Opportunity.source == source)
+            q = q.filter(ScanResult.source == source)
         if min_margin is not None:
-            q = q.filter(Opportunity.margin_pct >= min_margin)
+            q = q.filter(ScanResult.margin_pct >= min_margin)
         total = q.count()
-        items = q.order_by(desc(Opportunity.margin_pct)).offset(offset).limit(limit).all()
-        return {"items": [_opp_dict(o) for o in items], "total": total}
+        items = q.order_by(desc(ScanResult.created_at)).offset(offset).limit(limit).all()
+        def _sr_dict(r):
+            return {
+                "id": r.id,
+                "source": r.source,
+                "source_product_id": r.source_product_id,
+                "source_url": r.source_url,
+                "title": r.title,
+                "image_urls": r.image_urls,
+                "category": r.category,
+                "brand": r.brand,
+                "source_price": r.source_price,
+                "shipping_cost": r.shipping_cost,
+                "target_price": r.target_price,
+                "margin_pct": r.margin_pct,
+                "final_profit": r.final_profit,
+                "cashback_rate": r.cashback_rate,
+                "cashback_amount": r.cashback_amount,
+                "best_cashback_site": r.best_cashback_site,
+                "rating": r.rating,
+                "review_count": r.review_count,
+                "stock": r.stock,
+                "status": r.status,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+                "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+            }
+        return {"items": [_sr_dict(r) for r in items], "total": total}
+
 
     @api.get("/opportunities/{opp_id}")
     def get_opportunity(opp_id: int, db: Session = Depends(get_db)):
@@ -816,73 +842,61 @@ def create_app(static_dir: str) -> FastAPI:
                 review_count = int(item.get("Product Reviews") or item.get("review_count") or item.get("reviews_count") or 0)
                 seller_name = item.get("Product Seller") or item.get("seller_name") or item.get("sold_by") or item.get("seller") or ""
 
-                opp = db.query(Opportunity).filter(
-                    Opportunity.source_product_id == str(source_product_id),
-                    Opportunity.source == "walmart"
+                existing = db.query(ScanResult).filter(
+                    ScanResult.source_product_id == str(source_product_id),
+                    ScanResult.source == "walmart"
                 ).first()
 
                 min_margin = _get_setting(db, "default_min_margin", "30.0", float)
                 bonanza_fee = _get_setting(db, "bonanza_google_fee", "20.0", float)
-                
                 margin_factor = 1.0 - (bonanza_fee / 100.0) - (min_margin / 100.0)
                 if margin_factor > 0.1:
                     target_price = round((source_price + shipping_cost) / margin_factor, 2)
                 else:
                     target_price = round((source_price + shipping_cost) * 1.5, 2)
+                profit = round(target_price - source_price - shipping_cost - (target_price * (bonanza_fee / 100.0)), 2)
 
-                profit = target_price - source_price - shipping_cost - (target_price * (bonanza_fee / 100.0))
-
-                if opp:
-                    opp.title = title
-                    opp.source_price = source_price
-                    opp.shipping_cost = shipping_cost
-                    opp.stock = stock
-                    opp.image_urls = image_urls
-                    opp.target_price = target_price
-                    opp.margin_pct = min_margin
-                    opp.final_profit = profit
-                    opp.final_margin_pct = min_margin
-                    opp.brand = brand
-                    opp.upc = upc
-                    opp.discount_info = discount_info_str
-                    opp.rating = rating
-                    opp.review_count = review_count
-                    opp.seller_name = seller_name
-                    opp.updated_at = datetime.utcnow()
-                    opp.status = "new"  # Re-evaluate it when rescanned
+                if existing:
+                    existing.title = title
+                    existing.source_price = source_price
+                    existing.shipping_cost = shipping_cost
+                    existing.stock = stock
+                    existing.image_urls = image_urls
+                    existing.target_price = target_price
+                    existing.margin_pct = min_margin
+                    existing.final_profit = profit
+                    existing.brand = brand
+                    existing.rating = rating
+                    existing.review_count = review_count
+                    existing.updated_at = datetime.utcnow()
+                    existing.status = "new"
                     db.flush()
-                    processed_ids.append(opp.id)
+                    processed_ids.append(existing.id)
                     updated_count += 1
                 else:
-                    opp = Opportunity(
-                        origin="manual_scout",
+                    sr = ScanResult(
                         source="walmart",
                         source_url=source_url,
                         source_product_id=str(source_product_id),
                         title=title,
-                        description=item.get("description") or item.get("product_description") or "",
                         image_urls=image_urls,
                         category=item.get("category") or item.get("Product Category") or "General",
+                        brand=brand,
                         source_price=source_price,
                         shipping_cost=shipping_cost,
                         target_price=target_price,
-                        stock=stock,
                         margin_pct=min_margin,
                         final_profit=profit,
-                        final_margin_pct=min_margin,
-                        brand=brand,
-                        upc=upc,
-                        discount_info=discount_info_str,
                         rating=rating,
                         review_count=review_count,
-                        seller_name=seller_name,
+                        stock=stock,
                         status="new",
                         created_at=datetime.utcnow(),
                         updated_at=datetime.utcnow()
                     )
-                    db.add(opp)
+                    db.add(sr)
                     db.flush()
-                    processed_ids.append(opp.id)
+                    processed_ids.append(sr.id)
                     imported_count += 1
 
             db.commit()
@@ -896,7 +910,7 @@ def create_app(static_dir: str) -> FastAPI:
                     completed_at=datetime.utcnow()
                 ))
                 db.commit()
-                
+
         except Exception as e:
             db.rollback()
             import traceback
@@ -912,9 +926,7 @@ def create_app(static_dir: str) -> FastAPI:
             db.commit()
             raise HTTPException(500, detail={"error": str(e), "traceback": tb})
 
-        # Trigger DataForSEO filter pipeline in the background
-        if processed_ids:
-            bg_tasks.add_task(run_dataforseo_filter_pipeline, processed_ids)
+        # Products sit in scan_results for manual review — no background pipeline
 
         return {
             "status": "success",
