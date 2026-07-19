@@ -112,7 +112,6 @@ class Opportunity(Base):
     source_price = Column(Float, default=0.0)
     shipping_cost = Column(Float, default=0.0)
     target_price = Column(Float, default=0.0)       # Bonanza listing price
-    required_sell_price = Column(Float, default=0.0) # From Stage 3
     google_high_price = Column(Float, default=0.0)
     google_low_price = Column(Float, default=0.0)
     google_avg_price = Column(Float, default=0.0)
