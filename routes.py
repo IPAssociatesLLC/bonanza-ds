@@ -916,8 +916,9 @@ def create_app(static_dir: str) -> FastAPI:
         except Exception:
             target_urls = [default_url]
 
-        # Build the webhook URL that ScraperAPI will POST results back to
-        webhook_url = f"{req.base_url.scheme}://{req.base_url.netloc}/api/import/walmart"
+        # Hardcode the live Vercel webhook URL — do NOT use req.base_url here.
+        # On Vercel serverless, req.base_url returns an internal address, not the real domain.
+        webhook_url = "https://bonanza-ds.vercel.app/api/import/walmart"
 
         import httpx
         import asyncio
