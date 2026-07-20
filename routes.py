@@ -767,7 +767,7 @@ def create_app(static_dir: str) -> FastAPI:
                 # Seller name
                 seller_name = str(item.get("seller_name") or item.get("seller") or "Walmart")
 
-                logger.info(f"Processing Walmart product: {title} | Price: ${source_price} | Original: ${original_price} | Discount: {discount_pct}%")"
+                logger.info(f"Processing Walmart product: {title} | Price: ${source_price} | Original: ${original_price} | Discount: {discount_pct}%")
 
                 sr = db.query(ScanResult).filter(
                     ScanResult.source_product_id == str(source_product_id)
