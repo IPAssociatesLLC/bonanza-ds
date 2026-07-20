@@ -166,6 +166,8 @@ class ScanResult(Base):
     category = Column(String(200), default="General")
     brand = Column(String(200), default="Unbranded")
     source_price = Column(Float, default=0.0)
+    original_price = Column(Float, nullable=True, default=0.0)
+    discount_pct = Column(Float, nullable=True, default=0.0)
     shipping_cost = Column(Float, default=0.0)
     target_price = Column(Float, default=0.0)
     margin_pct = Column(Float, default=0.0)

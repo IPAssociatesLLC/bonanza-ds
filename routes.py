@@ -503,16 +503,20 @@ def create_app(static_dir: str) -> FastAPI:
         total = q.count()
         items = q.order_by(desc(ScanResult.created_at)).offset(offset).limit(limit).all()
         def _sr_dict(r):
+            raw_imgs = r.image_urls or ""
+            image_list = [u.strip() for u in raw_imgs.split("|") if u.strip()] if raw_imgs else []
             return {
                 "id": r.id,
                 "source": r.source,
                 "source_product_id": r.source_product_id,
                 "source_url": r.source_url,
                 "title": r.title,
-                "image_urls": r.image_urls,
+                "image_urls": image_list,
                 "category": r.category,
                 "brand": r.brand,
                 "source_price": r.source_price,
+                "original_price": getattr(r, 'original_price', None) or r.source_price,
+                "discount_pct": getattr(r, 'discount_pct', None) or 0.0,
                 "shipping_cost": r.shipping_cost,
                 "target_price": r.target_price,
                 "margin_pct": r.margin_pct,
@@ -872,8 +876,12 @@ def create_app(static_dir: str) -> FastAPI:
         try:
             payload_data = await req.json()
             pages = int(payload_data.get("pages", 1)) if payload_data else 1
+            min_price = float(payload_data.get("min_price", 0)) if payload_data else 0
+            max_price = float(payload_data.get("max_price", 99999)) if payload_data else 99999
         except Exception:
             pages = 1
+            min_price = 0
+            max_price = 99999
 
         import httpx
 
@@ -926,6 +934,16 @@ def create_app(static_dir: str) -> FastAPI:
                     if not title:
                         continue
 
+                    # Price range filter
+                    try:
+                        _check_price = float(item.get("price", {}).get("price") if isinstance(item.get("price"), dict) else item.get("price") or 0)
+                    except Exception:
+                        _check_price = 0
+                    if min_price > 0 and _check_price < min_price:
+                        continue
+                    if max_price < 99999 and _check_price > max_price:
+                        continue
+
                     source_product_id = str(item.get("product_id") or item.get("us_item_id") or item.get("id") or "")
                     if not source_product_id or source_product_id == "None":
                         import hashlib as _hl
@@ -942,9 +960,13 @@ def create_app(static_dir: str) -> FastAPI:
                             source_price = 0.0
 
                     try:
-                        original_price = float(item.get("was_price", {}).get("price") or item.get("original_price") or source_price)
+                        original_price = float(item.get("was_price", {}).get("price") if isinstance(item.get("was_price"), dict) else item.get("was_price") or item.get("original_price") or source_price)
                     except (ValueError, TypeError, AttributeError):
                         original_price = source_price
+
+                    discount_pct = 0.0
+                    if original_price > source_price > 0:
+                        discount_pct = round(((original_price - source_price) / original_price) * 100, 1)
 
                     raw_images = item.get("images") or item.get("image") or item.get("thumbnail") or ""
                     if isinstance(raw_images, list):
@@ -974,6 +996,8 @@ def create_app(static_dir: str) -> FastAPI:
                     if sr:
                         sr.title = title
                         sr.source_price = source_price
+                        sr.original_price = original_price
+                        sr.discount_pct = discount_pct
                         sr.image_urls = image_urls
                         sr.target_price = target_price
                         sr.margin_pct = min_margin
@@ -994,6 +1018,8 @@ def create_app(static_dir: str) -> FastAPI:
                             category=item.get("category_path") or "General",
                             brand=brand,
                             source_price=source_price,
+                            original_price=original_price,
+                            discount_pct=discount_pct,
                             shipping_cost=0.0,
                             target_price=target_price,
                             margin_pct=min_margin,
@@ -1014,7 +1040,8 @@ def create_app(static_dir: str) -> FastAPI:
             "status": "success",
             "message": f"Imported {imported_count} new products, updated {updated_count}. Check Scan Results page.",
             "imported": imported_count,
-            "updated": updated_count
+            "updated": updated_count,
+            "price_filter": {"min": min_price, "max": max_price}
         }
 
 
@@ -1888,4 +1915,20 @@ def _seed_defaults():
         logger.error("Seed failed: %s", e)
         db.rollback()
     finally:
+        # Add new columns to scan_results if not present
+        try:
+            from sqlalchemy import text
+            db2 = SessionLocal()
+            for col_sql in [
+                "ALTER TABLE scan_results ADD COLUMN original_price FLOAT DEFAULT 0.0",
+                "ALTER TABLE scan_results ADD COLUMN discount_pct FLOAT DEFAULT 0.0",
+            ]:
+                try:
+                    db2.execute(text(col_sql))
+                    db2.commit()
+                except Exception:
+                    db2.rollback()
+            db2.close()
+        except Exception:
+            pass
         db.close()

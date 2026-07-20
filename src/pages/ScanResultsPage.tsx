@@ -359,9 +359,13 @@ export function ScanResultsPage() {
                       />
                     </TableHead>
                     <TableHead>Product</TableHead>
+                    <TableHead>Brand</TableHead>
                     <TableHead>Source</TableHead>
-                    <TableHead className="text-right">Source Price</TableHead>
-                    <TableHead className="text-right">Target Price</TableHead>
+                    <TableHead className="text-right">Sale Price</TableHead>
+                    <TableHead className="text-right">Orig. Price</TableHead>
+                    <TableHead className="text-right">Discount</TableHead>
+                    <TableHead className="text-right">Rating</TableHead>
+                    <TableHead className="text-right">Stock</TableHead>
                     <TableHead className="text-right">Margin %</TableHead>
                     <TableHead className="text-right">Cashback</TableHead>
                     <TableHead className="text-right">Final Profit</TableHead>
@@ -402,16 +406,31 @@ export function ScanResultsPage() {
                             )}
                           </div>
                         </div>
-                      </TableCell>
-                      <TableCell>
+                      </TableCell>                      <TableCell className="text-sm text-muted-foreground">{opp.brand || "—"}</TableCell>                      <TableCell>
                         <Badge variant="outline" className="capitalize">{opp.source}</Badge>
                       </TableCell>
                       <TableCell className="text-right text-muted-foreground">{formatCurrency(opp.source_price)}</TableCell>
-                      <TableCell className="text-right font-medium text-foreground">{formatCurrency(opp.target_price)}</TableCell>
+                      <TableCell className="text-right text-muted-foreground">
+                        {(opp as any).original_price > opp.source_price ? formatCurrency((opp as any).original_price) : "—"}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {(opp as any).discount_pct > 0 ? (
+                          <span className="text-green-500 font-medium">{(opp as any).discount_pct.toFixed(0)}% off</span>
+                        ) : "—"}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {opp.rating > 0 ? (
+                          <span className="text-yellow-500">★ {opp.rating.toFixed(1)}</span>
+                        ) : "—"}
+                      </TableCell>
+                      <TableCell className="text-right text-muted-foreground">{opp.stock > 0 ? opp.stock : "—"}</TableCell>
                       <TableCell className="text-right">{getMarginBadge(opp.margin_pct)}</TableCell>
                       <TableCell className="text-right">
-                        {opp.cashback_amount > 0 ? (
-                          <span className="text-sm text-green-500">{formatCurrency(opp.cashback_amount)}</span>
+                        {opp.cashback_rate > 0 ? (
+                          <div className="text-right">
+                            <span className="text-sm text-green-500">{opp.cashback_rate}%</span>
+                            {opp.best_cashback_site && <p className="text-xs text-muted-foreground">{opp.best_cashback_site}</p>}
+                          </div>
                         ) : (
                           <span className="text-sm text-muted-foreground">—</span>
                         )}

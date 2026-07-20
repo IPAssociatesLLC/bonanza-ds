@@ -26,6 +26,8 @@ type AutomationSettings = {
   assumedCtr: string
   assumedConversion: string
   maxCredits: string
+  minPrice: string
+  maxPrice: string
   isActive: boolean
   isSaving: boolean
   isRunning: boolean
@@ -52,6 +54,8 @@ export function AdminAutomationsPage() {
       assumedCtr: "2.0",
       assumedConversion: "3.0",
       maxCredits: "50",
+      minPrice: "10",
+      maxPrice: "500",
       isActive: true,
       isSaving: false,
       isRunning: false,
@@ -71,6 +75,8 @@ export function AdminAutomationsPage() {
       assumedCtr: "2.0",
       assumedConversion: "3.0",
       maxCredits: "50",
+      minPrice: "0",
+      maxPrice: "99999",
       isActive: true,
       isSaving: false,
       isRunning: false,
@@ -90,6 +96,8 @@ export function AdminAutomationsPage() {
       assumedCtr: "2.0",
       assumedConversion: "3.0",
       maxCredits: "100",
+      minPrice: "0",
+      maxPrice: "99999",
       isActive: true,
       isSaving: false,
       isRunning: false,
@@ -109,6 +117,8 @@ export function AdminAutomationsPage() {
       assumedCtr: "2.0",
       assumedConversion: "3.0",
       maxCredits: "50",
+      minPrice: "10",
+      maxPrice: "500",
       isActive: true,
       isSaving: false,
       isRunning: false,
@@ -151,7 +161,9 @@ export function AdminAutomationsPage() {
         
         for (const url of urls) {
           await apiPost("/api/scraper/trigger", {
-            target_url: url
+            target_url: url,
+            min_price: parseFloat(automation.minPrice) || 0,
+            max_price: parseFloat(automation.maxPrice) || 99999,
           });
         }
         
@@ -251,6 +263,31 @@ export function AdminAutomationsPage() {
                         onChange={(e) => updateField(algo.id, "maxCredits", e.target.value)}
                         className="border-slate-400 dark:border-slate-600"
                       />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor={`minprice-${algo.id}`}>Min Product Price ($)</Label>
+                        <Input
+                          id={`minprice-${algo.id}`}
+                          type="number"
+                          value={algo.minPrice}
+                          onChange={(e) => updateField(algo.id, "minPrice", e.target.value)}
+                          placeholder="e.g. 10"
+                          className="border-slate-400 dark:border-slate-600"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor={`maxprice-${algo.id}`}>Max Product Price ($)</Label>
+                        <Input
+                          id={`maxprice-${algo.id}`}
+                          type="number"
+                          value={algo.maxPrice}
+                          onChange={(e) => updateField(algo.id, "maxPrice", e.target.value)}
+                          placeholder="e.g. 500"
+                          className="border-slate-400 dark:border-slate-600"
+                        />
+                      </div>
                     </div>
                   </div>
                   
