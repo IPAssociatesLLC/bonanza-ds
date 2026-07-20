@@ -107,6 +107,8 @@ export function ScanResultsPage() {
   const [sortField, setSortField] = useState<string>("created_at")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
   const [deleteLoading, setDeleteLoading] = useState(false)
+  const [filterLoading, setFilterLoading] = useState(false)
+  const [filterSuccess, setFilterSuccess] = useState<string | null>(null)
 
   const handleSort = (field: string) => {
     if (sortField === field) {
@@ -121,8 +123,28 @@ export function ScanResultsPage() {
     return <span className="ml-1">{sortDir === "asc" ? "↑" : "↓"}</span>
   }
 
-  const handleDeleteSelected = async () => {
-    if (selected.size === 0) return
+  const handleRunFilter = async () => {
+    setFilterLoading(true)
+    setFilterSuccess(null)
+    setActionError(null)
+    try {
+      const ids = selected.size > 0 ? [...selected] : []
+      const res = await fetch("/api/scan-results/run-filter", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids })
+      })
+      const data = await res.json()
+      setFilterSuccess(data.message || `Filtering ${data.queued} products - check Opportunities page shortly.`)
+      setSelected(new Set())
+    } catch (e) {
+      setActionError("Failed to start DataForSEO filter")
+    } finally {
+      setFilterLoading(false)
+    }
+  }
+
+  const handleDeleteSelected = async () => {    if (selected.size === 0) return
     if (!confirm(`Delete ${selected.size} selected product(s)?`)) return
     setDeleteLoading(true)
     try {
@@ -294,6 +316,15 @@ export function ScanResultsPage() {
             </Button>
             <Button
               variant="outline"
+              className="border-blue-500/40 text-blue-500 hover:bg-blue-500/10"
+              onClick={handleRunFilter}
+              disabled={filterLoading}
+            >
+              {filterLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <TrendingUp className="mr-2 h-4 w-4" />}
+              {selected.size > 0 ? `Filter Selected (${selected.size}) → Opportunities` : "Run Google Shopping Filter → Opportunities"}
+            </Button>
+            <Button
+              variant="outline"
               className="text-destructive border-destructive/30 hover:bg-destructive/10"
               onClick={async () => {
                 if (!confirm("Clear all Walmart scan results?")) return
@@ -329,6 +360,12 @@ export function ScanResultsPage() {
           </div>
         }
       />
+
+      {filterSuccess && (
+        <div className="mb-4 rounded-lg border border-blue-500/30 bg-blue-500/10 px-4 py-3 text-sm text-blue-500">
+          {filterSuccess}
+        </div>
+      )}
 
       {triggerSuccess && (
         <div className="mb-4 rounded-lg border border-green-500/30 bg-green-500/10 px-4 py-3 text-sm text-green-500">

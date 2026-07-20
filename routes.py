@@ -601,6 +601,35 @@ def create_app(static_dir: str) -> FastAPI:
         db.commit()
         return {"deleted": result_id}
 
+    @api.post("/scan-results/run-filter")
+    async def run_scan_results_filter(req: Request, bg_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+        """
+        Run DataForSEO Google Shopping + search volume filter on scan results.
+        Products that pass (30% cheaper than Google Shopping + 500+ monthly searches)
+        get moved to the Opportunities page.
+        """
+        try:
+            body = await req.json()
+            ids = body.get("ids", [])  # specific IDs, or empty = all new
+        except Exception:
+            ids = []
+
+        if ids:
+            results = db.query(ScanResult).filter(ScanResult.id.in_(ids)).all()
+        else:
+            results = db.query(ScanResult).filter(ScanResult.status == "new").all()
+
+        if not results:
+            return {"status": "ok", "message": "No products to filter", "queued": 0}
+
+        result_ids = [r.id for r in results]
+        bg_tasks.add_task(_run_scan_results_dataforseo_filter, result_ids)
+        return {
+            "status": "ok",
+            "message": f"Running DataForSEO filter on {len(result_ids)} products. Check Opportunities page shortly.",
+            "queued": len(result_ids)
+        }
+
 
     @api.get("/opportunities/{opp_id}")
     def get_opportunity(opp_id: int, db: Session = Depends(get_db)):
@@ -1908,6 +1937,155 @@ def _get_best_cashback_site(db: Session, source: str) -> dict | None:
         return None
     best = max(sites, key=lambda s: s.default_rate + s.upfront_discount)
     return _cashback_dict(best)
+
+
+async def _run_scan_results_dataforseo_filter(scan_result_ids: list):
+    """
+    Background task: reads ScanResult records, checks DataForSEO Google Shopping
+    prices and search volume, then creates Opportunity records for products that pass.
+    Pass criteria: source_price >= 30% cheaper than Google Shopping lowest AND >= 500 monthly searches.
+    """
+    import re
+    from api.dataforseo import check_search_volume, search_google_shopping_prices
+
+    db = SessionLocal()
+    try:
+        email = _get_setting(db, "dataforseo_email", "")
+        password = _get_setting(db, "dataforseo_password", "")
+        if not email or not password:
+            logger.error("DataForSEO credentials not configured in API Connections page.")
+            return
+
+        min_sv = _get_setting(db, "google_min_search_volume", "500", int)
+        min_margin_pct = _get_setting(db, "google_shopping_min_margin", "30.0", float)
+        bonanza_fee = _get_setting(db, "bonanza_google_fee", "20.0", float)
+
+        scan_results = db.query(ScanResult).filter(ScanResult.id.in_(scan_result_ids)).all()
+        if not scan_results:
+            return
+
+        def clean_title(title: str) -> str:
+            text = re.sub(r"[^\w\s-]", " ", title.lower())
+            words = [w for w in text.split() if len(w) > 2]
+            return " ".join(words[:5])
+
+        keywords = [clean_title(r.title) for r in scan_results]
+
+        logger.info(f"DataForSEO filter: checking search volume for {len(keywords)} products")
+        sv_map = await check_search_volume(keywords, email, password)
+
+        passed = 0
+        failed_sv = 0
+        failed_price = 0
+
+        for sr, kw in zip(scan_results, keywords):
+            sv = sv_map.get(kw, 0)
+            sr.monthly_search_volume = sv if hasattr(sr, 'monthly_search_volume') else sv
+
+            if sv < min_sv:
+                sr.status = "ignored"
+                logger.info(f"REJECTED (low search volume {sv}): {sr.title[:50]}")
+                failed_sv += 1
+                continue
+
+            # Check Google Shopping price
+            shopping = await search_google_shopping_prices(kw, email, password)
+            if not shopping:
+                sr.status = "ignored"
+                logger.info(f"REJECTED (no Google Shopping data): {sr.title[:50]}")
+                failed_price += 1
+                continue
+
+            google_low = shopping.get("low", 0.0)
+            google_high = shopping.get("high", 0.0)
+
+            if google_low <= 0:
+                sr.status = "ignored"
+                failed_price += 1
+                continue
+
+            # Check if our source price is cheap enough vs Google Shopping
+            # Price gap: (google_low - source_price) / google_low * 100
+            gap_pct = ((google_low - sr.source_price) / google_low) * 100.0
+            if gap_pct < min_margin_pct:
+                sr.status = "ignored"
+                logger.info(f"REJECTED (price gap {gap_pct:.1f}% < {min_margin_pct}%): {sr.title[:50]}")
+                failed_price += 1
+                continue
+
+            # PASSED - set target price just under Google Shopping lowest
+            target_price = round(google_low - 0.01, 2)
+            # Ensure minimum profit after fees
+            min_target = round(sr.source_price / (1.0 - bonanza_fee / 100.0 - 0.10), 2)
+            if target_price < min_target:
+                target_price = min_target
+
+            net_profit = round(target_price * (1 - bonanza_fee / 100.0) - sr.source_price, 2)
+            net_margin = round((net_profit / target_price) * 100, 1) if target_price > 0 else 0.0
+
+            # Get best cashback for walmart
+            cb_rate = 0.0
+            cb_amount = 0.0
+            cb_site = ""
+            try:
+                cb_sites = db.query(CashbackSite).filter(
+                    CashbackSite.supported_stores.ilike("%walmart%")
+                ).all()
+                if cb_sites:
+                    best_cb = max(cb_sites, key=lambda s: s.default_rate)
+                    cb_rate = best_cb.default_rate
+                    cb_amount = round(sr.source_price * cb_rate / 100.0, 2)
+                    cb_site = best_cb.name
+            except Exception:
+                pass
+
+            raw_imgs = sr.image_urls or ""
+
+            # Create Opportunity record
+            opp = Opportunity(
+                source=sr.source,
+                source_url=sr.source_url,
+                source_product_id=sr.source_product_id,
+                title=sr.title,
+                description="",
+                image_urls=raw_imgs,
+                category=sr.category,
+                brand=sr.brand,
+                source_price=sr.source_price,
+                shipping_cost=sr.shipping_cost or 0.0,
+                target_price=target_price,
+                google_low_price=google_low,
+                google_high_price=google_high,
+                monthly_search_volume=sv,
+                rating=sr.rating or 0.0,
+                review_count=sr.review_count or 0,
+                stock=sr.stock or 10,
+                seller_name="Walmart",
+                margin_pct=net_margin,
+                cashback_rate=cb_rate,
+                cashback_amount=cb_amount,
+                best_cashback_site=cb_site,
+                final_profit=round(net_profit + cb_amount, 2),
+                final_margin_pct=net_margin,
+                origin="automation_engine",
+                status="new",
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow()
+            )
+            db.add(opp)
+            sr.status = "approved"
+            passed += 1
+            logger.info(f"PASSED → Opportunity: {sr.title[:50]} | Google low: ${google_low} | Target: ${target_price} | Profit: ${net_profit}")
+
+        db.commit()
+        logger.info(f"DataForSEO filter complete: {passed} passed, {failed_sv} rejected (search vol), {failed_price} rejected (price)")
+
+    except Exception as e:
+        import traceback
+        logger.error(f"DataForSEO filter pipeline error: {traceback.format_exc()}")
+        db.rollback()
+    finally:
+        db.close()
 
 
 def _map_google_category(walmart_category: str, title: str) -> str:
