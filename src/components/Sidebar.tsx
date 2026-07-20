@@ -68,12 +68,8 @@ const navGroups: NavGroup[] = [
 export function Sidebar({ currentPath, isOpen, setIsOpen }: { currentPath: string, isOpen?: boolean, setIsOpen?: (o: boolean) => void }) {
   const { user } = useAuth()
   
-  // Filter nav groups based on user role
-  const visibleNavGroups = navGroups.filter(group => {
-    if (group.label === "Administration" && user?.role !== "admin") return false;
-    if (group.label === "System" && user?.role !== "admin") return false;
-    return true;
-  });
+  // Show all nav groups
+  const visibleNavGroups = navGroups;
 
   return (
     <>

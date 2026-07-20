@@ -114,15 +114,20 @@ async def get_current_active_admin(current_user: User = Depends(get_current_user
 @router.post("/register", response_model=UserResponse)
 def register(user: UserCreate, db: Session = Depends(get_db)):
     try:
+        print(f"DEBUG: Register attempt for {user.email}")
         db_user = db.query(User).filter(User.email == user.email).first()
         if db_user:
+            print(f"DEBUG: User already exists")
             raise HTTPException(status_code=400, detail="Email already registered")
             
-        # First user is automatically admin, others are user
+        print(f"DEBUG: Hashing password")
+        hashed_password = get_password_hash(user.password)
+        
+        print(f"DEBUG: Checking if first user")
         is_first_user = db.query(User).count() == 0
         role = "admin" if is_first_user else "user"
         
-        hashed_password = get_password_hash(user.password)
+        print(f"DEBUG: Creating user with role={role}")
         new_user = User(
             email=user.email,
             hashed_password=hashed_password,
@@ -130,37 +135,48 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
             api_credit_limit=50 if role == "user" else 99999
         )
         db.add(new_user)
+        print(f"DEBUG: Committing user")
         db.commit()
         db.refresh(new_user)
+        print(f"DEBUG: User created successfully")
         return new_user
     except HTTPException:
         raise
     except Exception as e:
         import traceback
         error_msg = str(e) + "\n" + traceback.format_exc()
-        raise HTTPException(status_code=500, detail=f"Registration failed: {error_msg}")
+        print(f"DEBUG ERROR: {error_msg}")
+        raise HTTPException(status_code=500, detail=error_msg)
 
 @router.post("/login", response_model=Token)
 def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     try:
+        print(f"DEBUG: Attempting login for {form_data.username}")
         user = db.query(User).filter(User.email == form_data.username).first()
-        if not user or not verify_password(form_data.password, user.hashed_password):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Incorrect username or password",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+        print(f"DEBUG: User found: {user is not None}")
+        if not user:
+            print(f"DEBUG: User not found in database")
+            raise HTTPException(status_code=401, detail="User not found")
+        
+        print(f"DEBUG: Checking password")
+        if not verify_password(form_data.password, user.hashed_password):
+            print(f"DEBUG: Password verification failed")
+            raise HTTPException(status_code=401, detail="Invalid password")
+        
+        print(f"DEBUG: Creating token")
         access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
         access_token = create_access_token(
             data={"sub": user.email, "role": user.role}, expires_delta=access_token_expires
         )
+        print(f"DEBUG: Token created successfully")
         return {"access_token": access_token, "token_type": "bearer"}
     except HTTPException:
         raise
     except Exception as e:
         import traceback
         error_msg = str(e) + "\n" + traceback.format_exc()
-        raise HTTPException(status_code=500, detail=f"Login failed: {error_msg}")
+        print(f"DEBUG ERROR: {error_msg}")
+        raise HTTPException(status_code=500, detail=error_msg)
 
 @router.get("/me", response_model=UserResponse)
 def read_users_me(current_user: User = Depends(get_current_user)):
