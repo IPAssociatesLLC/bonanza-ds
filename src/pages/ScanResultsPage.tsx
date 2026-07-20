@@ -119,7 +119,7 @@ export function ScanResultsPage() {
   const opportunities = data?.items ?? []
 
   const { data: detailOpp, loading: detailLoading } = useFetch<Opportunity>(
-    detailId !== null ? `/api/opportunities/${detailId}` : ""
+    detailId !== null ? `/api/scan-results/${detailId}` : ""
   )
 
   const allSelected = opportunities.length > 0 && opportunities.every((o) => selected.has(o.id))
@@ -240,6 +240,17 @@ export function ScanResultsPage() {
         description={`Found ${data?.total || 0} potential items from the Product Scout scanner.`}
         actions={
           <div className="flex gap-2">
+            <Button
+              variant="outline"
+              className="text-destructive border-destructive/30 hover:bg-destructive/10"
+              onClick={async () => {
+                if (!confirm("Clear all Walmart scan results?")) return
+                await fetch("/api/scan-results/clear?source=walmart", { method: "DELETE" })
+                refetch()
+              }}
+            >
+              Clear Walmart Results
+            </Button>
             <Button
               variant="outline"
               onClick={handleTriggerScraper}

@@ -533,6 +533,64 @@ def create_app(static_dir: str) -> FastAPI:
             }
         return {"items": [_sr_dict(r) for r in items], "total": total}
 
+    @api.get("/scan-results/{result_id}")
+    def get_scan_result(result_id: int, db: Session = Depends(get_db)):
+        r = db.query(ScanResult).filter(ScanResult.id == result_id).first()
+        if not r:
+            raise HTTPException(404, "Scan result not found")
+        raw_imgs = r.image_urls or ""
+        image_list = [u.strip() for u in raw_imgs.split("|") if u.strip()] if raw_imgs else []
+        return {
+            "id": r.id,
+            "source": r.source,
+            "source_product_id": r.source_product_id,
+            "source_url": r.source_url,
+            "title": r.title,
+            "description": "",
+            "image_urls": image_list,
+            "category": r.category,
+            "brand": r.brand,
+            "source_price": r.source_price,
+            "original_price": getattr(r, 'original_price', None) or r.source_price,
+            "discount_pct": getattr(r, 'discount_pct', None) or 0.0,
+            "shipping_cost": r.shipping_cost,
+            "target_price": r.target_price,
+            "margin_pct": r.margin_pct,
+            "final_profit": r.final_profit,
+            "cashback_rate": r.cashback_rate or 0.0,
+            "cashback_amount": r.cashback_amount or 0.0,
+            "best_cashback_site": r.best_cashback_site or "",
+            "rating": r.rating,
+            "review_count": r.review_count,
+            "stock": r.stock,
+            "status": r.status,
+            "upc": "",
+            "seller_name": "Walmart",
+            "seller_rating": 0.0,
+            "seller_years": 0.0,
+            "monthly_sales": 0,
+            "monthly_search_volume": 0,
+            "google_low_price": 0.0,
+            "google_high_price": 0.0,
+            "discount_info": f"{getattr(r, 'discount_pct', 0) or 0:.0f}% off" if (getattr(r, 'discount_pct', 0) or 0) > 0 else "",
+            "ai_title": "",
+            "ai_description": "",
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+            "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+            "vendor_analysis": {"risk_level": "unknown", "summary": "Walmart seller", "recommendation": "Verify product availability before listing"},
+        }
+
+    @api.delete("/scan-results/clear")
+    def clear_scan_results(source: str | None = None, db: Session = Depends(get_db)):
+        """Clear all scan results (or by source) to start fresh."""
+        q = db.query(ScanResult)
+        if source:
+            q = q.filter(ScanResult.source == source)
+        count = q.count()
+        q.delete()
+        db.commit()
+        return {"deleted": count}
+
 
     @api.get("/opportunities/{opp_id}")
     def get_opportunity(opp_id: int, db: Session = Depends(get_db)):
@@ -1015,7 +1073,7 @@ def create_app(static_dir: str) -> FastAPI:
                             source_product_id=source_product_id,
                             title=title,
                             image_urls=image_urls,
-                            category=item.get("category_path") or "General",
+                            category=_map_google_category(item.get("category_path") or "", title),
                             brand=brand,
                             source_price=source_price,
                             original_price=original_price,
@@ -1840,6 +1898,61 @@ def _get_best_cashback_site(db: Session, source: str) -> dict | None:
         return None
     best = max(sites, key=lambda s: s.default_rate + s.upfront_discount)
     return _cashback_dict(best)
+
+
+def _map_google_category(walmart_category: str, title: str) -> str:
+    """Map Walmart category path and product title to Google Shopping taxonomy."""
+    text = (walmart_category + " " + title).lower()
+    if any(w in text for w in ["earbuds", "headphone", "speaker", "audio", "bluetooth audio"]):
+        return "Electronics > Audio > Headphones & Headsets"
+    if any(w in text for w in ["camera", "webcam", "dash cam"]):
+        return "Electronics > Cameras & Optics > Cameras"
+    if any(w in text for w in ["laptop", "computer", "tablet", "ipad", "chromebook"]):
+        return "Electronics > Computers"
+    if any(w in text for w in ["phone", "smartphone", "mobile", "iphone", "samsung galaxy"]):
+        return "Electronics > Communications > Phones"
+    if any(w in text for w in ["tv", "television", "monitor", "screen", "projector"]):
+        return "Electronics > Video > Televisions"
+    if any(w in text for w in ["vacuum", "cleaner", "mop", "broom", "sweeper"]):
+        return "Home & Garden > Household Appliances > Vacuums"
+    if any(w in text for w in ["blender", "air fryer", "coffee maker", "instant pot", "kitchen"]):
+        return "Home & Garden > Kitchen & Dining > Kitchen Appliances"
+    if any(w in text for w in ["lamp", "light", "led", "bulb", "lantern", "flashlight"]):
+        return "Home & Garden > Lighting"
+    if any(w in text for w in ["toy", "kids", "children", "playset", "action figure", "doll", "lego"]):
+        return "Toys & Games"
+    if any(w in text for w in ["game", "gaming", "controller", "console", "xbox", "playstation"]):
+        return "Electronics > Video Games & Consoles"
+    if any(w in text for w in ["watch", "smartwatch", "fitness tracker", "band"]):
+        return "Apparel & Accessories > Jewelry > Watches"
+    if any(w in text for w in ["jewelry", "necklace", "bracelet", "ring", "earring", "gold", "silver"]):
+        return "Apparel & Accessories > Jewelry"
+    if any(w in text for w in ["shoes", "sneakers", "boots", "sandals", "heels"]):
+        return "Apparel & Accessories > Shoes"
+    if any(w in text for w in ["shirt", "pants", "dress", "jacket", "clothing", "apparel", "hoodie"]):
+        return "Apparel & Accessories > Clothing"
+    if any(w in text for w in ["bike", "bicycle", "scooter", "skateboard"]):
+        return "Sporting Goods > Outdoor Recreation > Cycling"
+    if any(w in text for w in ["fitness", "exercise", "gym", "dumbbell", "weight", "yoga", "treadmill"]):
+        return "Sporting Goods > Exercise & Fitness"
+    if any(w in text for w in ["outdoor", "camping", "hiking", "fishing", "hunting"]):
+        return "Sporting Goods > Outdoor Recreation"
+    if any(w in text for w in ["pet", "dog", "cat", "bird", "fish tank", "aquarium"]):
+        return "Animals & Pet Supplies"
+    if any(w in text for w in ["beauty", "skincare", "makeup", "perfume", "hair", "shampoo"]):
+        return "Health & Beauty > Beauty & Personal Care"
+    if any(w in text for w in ["vitamin", "supplement", "medicine", "health"]):
+        return "Health & Beauty > Health Care"
+    if any(w in text for w in ["office", "desk", "chair", "printer", "pen", "notebook"]):
+        return "Office Supplies"
+    if any(w in text for w in ["car", "auto", "vehicle", "truck", "tire", "motor"]):
+        return "Vehicles & Parts > Vehicle Parts & Accessories"
+    if any(w in text for w in ["tool", "drill", "saw", "wrench", "hammer", "screw"]):
+        return "Hardware > Tools"
+    if any(w in text for w in ["book", "novel", "textbook"]):
+        return "Media > Books"
+    # Default fallback
+    return "Home & Garden > Decor"
 
 
 def _seed_defaults():
