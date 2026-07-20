@@ -493,17 +493,19 @@ def create_app(static_dir: str) -> FastAPI:
         offset: int = 0,
         db: Session = Depends(get_db),
     ):
-        q = db.query(WalmartProduct)
+        q = db.query(ScanResult)
         if status:
-            q = q.filter(WalmartProduct.status == status)
+            q = q.filter(ScanResult.status == status)
+        if source:
+            q = q.filter(ScanResult.source == source)
         if min_margin is not None:
-            q = q.filter(WalmartProduct.margin_pct >= min_margin)
+            q = q.filter(ScanResult.margin_pct >= min_margin)
         total = q.count()
-        items = q.order_by(desc(WalmartProduct.created_at)).offset(offset).limit(limit).all()
-        def _wp_dict(r):
+        items = q.order_by(desc(ScanResult.created_at)).offset(offset).limit(limit).all()
+        def _sr_dict(r):
             return {
                 "id": r.id,
-                "source": "walmart",
+                "source": r.source,
                 "source_product_id": r.source_product_id,
                 "source_url": r.source_url,
                 "title": r.title,
@@ -511,7 +513,7 @@ def create_app(static_dir: str) -> FastAPI:
                 "category": r.category,
                 "brand": r.brand,
                 "source_price": r.source_price,
-                "shipping_cost": 0.0,
+                "shipping_cost": r.shipping_cost,
                 "target_price": r.target_price,
                 "margin_pct": r.margin_pct,
                 "final_profit": r.final_profit,
@@ -525,7 +527,7 @@ def create_app(static_dir: str) -> FastAPI:
                 "created_at": r.created_at.isoformat() if r.created_at else None,
                 "updated_at": r.updated_at.isoformat() if r.updated_at else None,
             }
-        return {"items": [_wp_dict(r) for r in items], "total": total}
+        return {"items": [_sr_dict(r) for r in items], "total": total}
 
 
     @api.get("/opportunities/{opp_id}")
@@ -840,8 +842,8 @@ def create_app(static_dir: str) -> FastAPI:
                 review_count = int(item.get("Product Reviews") or item.get("review_count") or item.get("reviews_count") or 0)
                 seller_name = item.get("Product Seller") or item.get("seller_name") or item.get("sold_by") or item.get("seller") or ""
 
-                wp = db.query(WalmartProduct).filter(
-                    WalmartProduct.source_product_id == str(source_product_id)
+                sr = db.query(ScanResult).filter(
+                    ScanResult.source_product_id == str(source_product_id)
                 ).first()
 
                 min_margin = _get_setting(db, "default_min_margin", "30.0", float)
@@ -853,31 +855,34 @@ def create_app(static_dir: str) -> FastAPI:
                     target_price = round((source_price + shipping_cost) * 1.5, 2)
                 profit = round(target_price - source_price - shipping_cost - (target_price * (bonanza_fee / 100.0)), 2)
 
-                if wp:
-                    wp.title = title
-                    wp.source_price = source_price
-                    wp.stock = stock
-                    wp.image_urls = image_urls
-                    wp.target_price = target_price
-                    wp.margin_pct = min_margin
-                    wp.final_profit = profit
-                    wp.brand = brand
-                    wp.rating = rating
-                    wp.review_count = review_count
-                    wp.updated_at = datetime.utcnow()
-                    wp.status = "new"
+                if sr:
+                    sr.title = title
+                    sr.source_price = source_price
+                    sr.shipping_cost = shipping_cost
+                    sr.stock = stock
+                    sr.image_urls = image_urls
+                    sr.target_price = target_price
+                    sr.margin_pct = min_margin
+                    sr.final_profit = profit
+                    sr.brand = brand
+                    sr.rating = rating
+                    sr.review_count = review_count
+                    sr.updated_at = datetime.utcnow()
+                    sr.status = "new"
                     db.flush()
-                    processed_ids.append(wp.id)
+                    processed_ids.append(sr.id)
                     updated_count += 1
                 else:
-                    wp = WalmartProduct(
-                        title=title,
+                    sr = ScanResult(
+                        source="walmart",
                         source_url=source_url,
                         source_product_id=str(source_product_id),
+                        title=title,
                         image_urls=image_urls,
                         category=item.get("category") or item.get("Product Category") or "General",
                         brand=brand,
                         source_price=source_price,
+                        shipping_cost=shipping_cost,
                         target_price=target_price,
                         margin_pct=min_margin,
                         final_profit=profit,
@@ -888,9 +893,9 @@ def create_app(static_dir: str) -> FastAPI:
                         created_at=datetime.utcnow(),
                         updated_at=datetime.utcnow()
                     )
-                    db.add(wp)
+                    db.add(sr)
                     db.flush()
-                    processed_ids.append(wp.id)
+                    processed_ids.append(sr.id)
                     imported_count += 1
 
             db.commit()
