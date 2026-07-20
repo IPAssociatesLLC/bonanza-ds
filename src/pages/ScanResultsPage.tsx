@@ -135,8 +135,9 @@ export function ScanResultsPage() {
         body: JSON.stringify({ ids })
       })
       const data = await res.json()
-      setFilterSuccess(data.message || `Filtering ${data.queued} products - check Opportunities page shortly.`)
+      setFilterSuccess(data.message || `Done. Check Opportunities page.`)
       setSelected(new Set())
+      refetch()
     } catch (e) {
       setActionError("Failed to start DataForSEO filter")
     } finally {

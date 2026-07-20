@@ -602,32 +602,130 @@ def create_app(static_dir: str) -> FastAPI:
         return {"deleted": result_id}
 
     @api.post("/scan-results/run-filter")
-    async def run_scan_results_filter(req: Request, bg_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    async def run_scan_results_filter(req: Request, db: Session = Depends(get_db)):
         """
         Run DataForSEO Google Shopping + search volume filter on scan results.
-        Products that pass (30% cheaper than Google Shopping + 500+ monthly searches)
-        get moved to the Opportunities page.
+        Processes synchronously, commits to Supabase after each product.
+        Limit 10 per call to stay within Vercel timeout.
         """
+        import re
+        from api.dataforseo import check_search_volume, search_google_shopping_prices
+
         try:
             body = await req.json()
-            ids = body.get("ids", [])  # specific IDs, or empty = all new
+            ids = body.get("ids", [])
         except Exception:
             ids = []
 
+        email = _get_setting(db, "dataforseo_email", "")
+        password = _get_setting(db, "dataforseo_password", "")
+        if not email or not password:
+            raise HTTPException(400, "DataForSEO credentials not configured in API Connections page.")
+
+        min_sv = _get_setting(db, "google_min_search_volume", "500", int)
+        min_margin_pct = _get_setting(db, "google_shopping_min_margin", "30.0", float)
+        bonanza_fee = _get_setting(db, "bonanza_google_fee", "20.0", float)
+
         if ids:
-            results = db.query(ScanResult).filter(ScanResult.id.in_(ids)).all()
+            scan_results = db.query(ScanResult).filter(ScanResult.id.in_(ids)).limit(10).all()
         else:
-            results = db.query(ScanResult).filter(ScanResult.status == "new").all()
+            scan_results = db.query(ScanResult).filter(ScanResult.status == "new").limit(10).all()
 
-        if not results:
-            return {"status": "ok", "message": "No products to filter", "queued": 0}
+        if not scan_results:
+            return {"status": "ok", "message": "No new products to filter.", "passed": 0, "failed": 0, "remaining": 0}
 
-        result_ids = [r.id for r in results]
-        bg_tasks.add_task(_run_scan_results_dataforseo_filter, result_ids)
+        def clean_title(title: str) -> str:
+            text = re.sub(r"[^\w\s-]", " ", title.lower())
+            words = [w for w in text.split() if len(w) > 2]
+            return " ".join(words[:5])
+
+        keywords = [clean_title(r.title) for r in scan_results]
+
+        # Batch search volume check
+        sv_map = await check_search_volume(keywords, email, password)
+
+        passed = 0
+        failed = 0
+
+        for sr, kw in zip(scan_results, keywords):
+            sv = sv_map.get(kw, 0)
+
+            if sv < min_sv:
+                sr.status = "ignored"
+                db.commit()
+                failed += 1
+                logger.info(f"REJECTED (search vol {sv}): {sr.title[:50]}")
+                continue
+
+            shopping = await search_google_shopping_prices(kw, email, password)
+            if not shopping or not shopping.get("low", 0):
+                sr.status = "ignored"
+                db.commit()
+                failed += 1
+                logger.info(f"REJECTED (no Google Shopping data): {sr.title[:50]}")
+                continue
+
+            google_low = shopping["low"]
+            google_high = shopping.get("high", google_low)
+            gap_pct = ((google_low - sr.source_price) / google_low) * 100.0
+
+            if gap_pct < min_margin_pct:
+                sr.status = "ignored"
+                db.commit()
+                failed += 1
+                logger.info(f"REJECTED (gap {gap_pct:.1f}%): {sr.title[:50]}")
+                continue
+
+            # PASSED - price just under Google Shopping lowest
+            target_price = round(google_low - 0.01, 2)
+            min_target = round(sr.source_price / (1.0 - bonanza_fee / 100.0 - 0.10), 2)
+            if target_price < min_target:
+                target_price = min_target
+
+            net_profit = round(target_price * (1 - bonanza_fee / 100.0) - sr.source_price, 2)
+            net_margin = round((net_profit / target_price) * 100, 1) if target_price > 0 else 0.0
+
+            cb_rate, cb_amount, cb_site = 0.0, 0.0, ""
+            try:
+                cb_sites = db.query(CashbackSite).filter(CashbackSite.supported_stores.ilike("%walmart%")).all()
+                if cb_sites:
+                    best_cb = max(cb_sites, key=lambda s: s.default_rate)
+                    cb_rate = best_cb.default_rate
+                    cb_amount = round(sr.source_price * cb_rate / 100.0, 2)
+                    cb_site = best_cb.name
+            except Exception:
+                pass
+
+            opp = Opportunity(
+                source=sr.source, source_url=sr.source_url,
+                source_product_id=sr.source_product_id, title=sr.title,
+                description="", image_urls=sr.image_urls or "",
+                category=sr.category, brand=sr.brand,
+                source_price=sr.source_price, shipping_cost=sr.shipping_cost or 0.0,
+                target_price=target_price,
+                google_low_price=google_low, google_high_price=google_high,
+                monthly_search_volume=sv,
+                rating=sr.rating or 0.0, review_count=sr.review_count or 0,
+                stock=sr.stock or 10, seller_name="Walmart",
+                margin_pct=net_margin, cashback_rate=cb_rate,
+                cashback_amount=cb_amount, best_cashback_site=cb_site,
+                final_profit=round(net_profit + cb_amount, 2),
+                final_margin_pct=net_margin, origin="automation_engine",
+                status="new", created_at=datetime.utcnow(), updated_at=datetime.utcnow()
+            )
+            db.add(opp)
+            sr.status = "approved"
+            db.commit()  # Commit each product immediately to Supabase
+            passed += 1
+            logger.info(f"PASSED → Opportunity: {sr.title[:50]} | Target: ${target_price} | Profit: ${net_profit}")
+
+        remaining = db.query(ScanResult).filter(ScanResult.status == "new").count()
         return {
             "status": "ok",
-            "message": f"Running DataForSEO filter on {len(result_ids)} products. Check Opportunities page shortly.",
-            "queued": len(result_ids)
+            "message": f"{passed} products sent to Opportunities. {failed} rejected. {remaining} more products still pending - click again to continue.",
+            "passed": passed,
+            "failed": failed,
+            "remaining": remaining
         }
 
 
