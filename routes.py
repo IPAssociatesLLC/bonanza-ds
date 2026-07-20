@@ -711,7 +711,9 @@ def create_app(static_dir: str) -> FastAPI:
 
         created = 0
         for sr in results:
+            logger.info(f"Processing scan result id={sr.id} price={sr.source_price} status={sr.status}")
             if sr.source_price <= 0:
+                logger.warning(f"Skipping id={sr.id} - source_price is 0")
                 continue
             target_price = round(sr.source_price / margin_factor, 2)
             net_profit = round(target_price * (1 - bonanza_fee / 100.0) - sr.source_price, 2)
@@ -749,6 +751,7 @@ def create_app(static_dir: str) -> FastAPI:
             created += 1
 
         db.commit()
+        logger.info(f"send-to-opportunities: created={created} from {len(results)} results")
         return {"status": "ok", "sent_to_opportunities": created}
 
     @api.post("/scan-results/run-filter")
