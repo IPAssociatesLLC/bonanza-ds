@@ -133,6 +133,8 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(new_user)
         return new_user
+    except HTTPException:
+        raise
     except Exception as e:
         import traceback
         error_msg = str(e) + "\n" + traceback.format_exc()
