@@ -620,227 +620,59 @@ def create_app(static_dir: str) -> FastAPI:
             raise HTTPException(500, f"Price suggestion failed: {str(e)}")
     @api.post("/import/walmart")
     async def import_walmart_webhook(req: Request, bg_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+        """Webhook receiver for ScraperAPI Walmart Search API results (JSON only)."""
+        logger.info("━━━ WALMART WEBHOOK RECEIVED ━━━")
         try:
             payload = await req.json()
+            logger.info(f"Webhook payload type: {type(payload).__name__}")
+            logger.debug(f"Webhook payload preview: {str(payload)[:500] if isinstance(payload, (dict, list)) else payload}")
         except Exception as e:
+            logger.error(f"Failed to parse webhook JSON: {e}")
             raise HTTPException(400, f"Invalid JSON payload: {str(e)}")
 
-        import re as _re
-        import json as _json
-
-        def _extract_walmart_products_from_html(html: str) -> list:
-            """Fast Walmart product extractor — no catastrophic-backtracking regex."""
-            products = []
-            try:
-                # Step 1: find __WML_REDUX_INITIAL_STATE__ by plain string search
-                marker = "__WML_REDUX_INITIAL_STATE__"
-                idx = html.find(marker)
-                if idx == -1:
-                    logger.warning("__WML_REDUX_INITIAL_STATE__ not found in HTML")
-                else:
-                    # Find the opening brace
-                    brace_start = html.find("{", idx + len(marker))
-                    if brace_start != -1:
-                        # Walk forward counting braces to find matching close
-                        depth = 0
-                        brace_end = brace_start
-                        for i, ch in enumerate(html[brace_start:brace_start + 5_000_000], start=brace_start):
-                            if ch == "{":
-                                depth += 1
-                            elif ch == "}":
-                                depth -= 1
-                                if depth == 0:
-                                    brace_end = i
-                                    break
-                        state_json = html[brace_start:brace_end + 1]
-                        state = _json.loads(state_json)
-                        # Try multiple known Walmart page structures
-                        items_data = []
-                        preso_items = state.get("preso", {}).get("items", [])
-                        if preso_items:
-                            items_data = preso_items
-                        else:
-                            stacks = state.get("search", {}).get("searchResult", {}).get("itemStacks", [])
-                            if stacks:
-                                items_data = stacks[0].get("items", [])
-                        if not items_data:
-                            modules = state.get("tempo", {}).get("modules", [])
-                            for m in modules:
-                                configs = m.get("configs", {})
-                                prods = configs.get("products", []) or configs.get("items", [])
-                                if prods:
-                                    items_data = prods
-                                    break
-
-                        for it in items_data:
-                            prod = it.get("item", it) if isinstance(it.get("item"), dict) else it
-                            name = (prod.get("name") or prod.get("title") or prod.get("productName") or "").strip()
-                            if not name:
-                                continue
-                            price_info = prod.get("priceInfo", {}) or {}
-                            price = (
-                                (price_info.get("currentPrice") or {}).get("price")
-                                or (price_info.get("wasPrice") or {}).get("price")
-                                or prod.get("price") or prod.get("salePrice") or 0.0
-                            )
-                            image = ((prod.get("imageInfo") or {}).get("thumbnailUrl") or prod.get("image") or "")
-                            url_path = prod.get("canonicalUrl") or prod.get("productUrl") or ""
-                            full_url = f"https://www.walmart.com{url_path}" if url_path.startswith("/") else url_path
-                            prod_id = prod.get("usItemId") or prod.get("itemId") or prod.get("id") or ""
-                            products.append({
-                                "title": name,
-                                "price": float(price) if price else 0.0,
-                                "source_url": full_url,
-                                "source_product_id": str(prod_id),
-                                "image": image,
-                                "source": "walmart",
-                            })
-
-                # Step 2: fallback regex scrape if state extraction returned nothing
-                if not products:
-                    logger.warning("State extraction returned 0 items — trying regex fallback")
-                    names = _re.findall(r'"name"\s*:\s*"([^"]{10,150})"', html)
-                    prices = _re.findall(r'"price"\s*:\s*([\d.]+)', html)
-                    images = _re.findall(r'"thumbnailUrl"\s*:\s*"([^"]+)"', html)
-                    urls_found = _re.findall(r'"canonicalUrl"\s*:\s*"(/ip/[^"]+)"', html)
-                    seen = set()
-                    for i, name in enumerate(names[:100]):
-                        if name in seen:
-                            continue
-                        seen.add(name)
-                        products.append({
-                            "title": name,
-                            "price": float(prices[i]) if i < len(prices) else 0.0,
-                            "source_url": f"https://www.walmart.com{urls_found[i]}" if i < len(urls_found) else "",
-                            "image": images[i] if i < len(images) else "",
-                            "source": "walmart",
-                        })
-            except Exception as parse_err:
-                logger.error(f"Walmart HTML parse error: {parse_err}")
-            return products
-
-        def _is_html(s) -> bool:
-            return isinstance(s, str) and ("<!DOCTYPE" in s[:500] or "<html" in s[:500].lower())
-
+        # Extract raw_products from ScraperAPI webhook response structure
+        raw_products = []
+        
         if isinstance(payload, list):
             raw_products = payload
         elif isinstance(payload, dict):
-            # ── ScraperAPI async webhook: {"response": {"body": "<html>..."}} ───
+            # ── ScraperAPI async webhook JSON structure ───
             if "response" in payload and isinstance(payload["response"], dict):
-                body = payload["response"].get("body", "")
-                if _is_html(body):
-                    raw_products = _extract_walmart_products_from_html(body)
-                elif isinstance(body, dict) and "organic_results" in body:
-                    raw_products = body["organic_results"]
-                elif isinstance(body, list):
-                    raw_products = body
-                else:
-                    raw_products = [body] if isinstance(body, dict) else []
-            # ── ScraperAPI DataPipeline resend: {"input": "url", "result": "<html>..."} ─
-            elif "result" in payload and _is_html(payload["result"]):
-                raw_products = _extract_walmart_products_from_html(payload["result"])
-            # ── Standard parsed formats ──────────────────────────────────────────
+                # New format: {"response": {"statusCode": 200, "body": {...}}}
+                body = payload["response"].get("body", {})
+                if isinstance(body, dict) and "organic_results" in body:
+                    raw_products = body.get("organic_results", [])
+            # ── Direct structured API response ───
             elif "organic_results" in payload and isinstance(payload["organic_results"], list):
                 raw_products = payload["organic_results"]
             elif "data" in payload and isinstance(payload["data"], list):
                 raw_products = payload["data"]
-            elif "extracted_data" in payload and isinstance(payload["extracted_data"], list):
-                raw_products = payload["extracted_data"]
-            elif "result" in payload and isinstance(payload["result"], dict) and "data" in payload["result"] and isinstance(payload["result"]["data"], list):
-                raw_products = payload["result"]["data"]
-            elif "result" in payload and isinstance(payload["result"], list):
-                raw_products = payload["result"]
             elif "products" in payload and isinstance(payload["products"], list):
                 raw_products = payload["products"]
             else:
-                raw_products = [payload]
-        else:
-            raise HTTPException(400, "Payload must be a JSON object or list of objects")
+                # Fallback: treat entire payload as single product if it has product fields
+                if "product_name" in payload or "price" in payload or "title" in payload:
+                    raw_products = [payload]
+        
+        if not isinstance(raw_products, list):
+            raw_products = []
+
+        logger.info(f"Extracted {len(raw_products)} products from webhook payload")
+        if len(raw_products) == 0:
+            logger.warning("No products found in webhook payload. Payload structure:")
+            logger.warning(f"Keys: {list(payload.keys()) if isinstance(payload, dict) else 'Not a dict'}")
+            return {
+                "status": "success",
+                "imported": 0,
+                "updated": 0,
+                "message": "No products found in webhook payload"
+            }
 
         imported_count = 0
         updated_count = 0
         processed_ids = []
 
-        try:
-            for item in raw_products:
-                title = item.get("Product Name") or item.get("title") or item.get("name") or item.get("product_name")
-                if not title:
-                    continue
-
-                source_product_id = item.get("itemId") or item.get("id") or item.get("productId") or item.get("product_id") or item.get("sku") or item.get("source_product_id")
-                source_url = item.get("Product URL") or item.get("url") or item.get("productUrl") or item.get("product_url") or item.get("link") or item.get("source_url") or ""
-                
-                if not source_product_id and source_url:
-                    import re
-                    match = re.search(r"/ip/(?:[^/]+/)?(\d+)", source_url)
-                    if match:
-                        source_product_id = match.group(1)
-
-                if not source_product_id:
-                    import hashlib
-                    source_product_id = hashlib.md5(title.encode('utf-8')).hexdigest()[:12]
-
-                raw_price = item.get("Product Price") or item.get("Price") or item.get("price") or item.get("sale_price") or item.get("final_price") or item.get("price_active") or item.get("discount_price") or item.get("source_price") or 0.0
-                if isinstance(raw_price, str):
-                    import re
-                    try:
-                        m = re.search(r"([0-9]+(?:\.[0-9]+)?)", raw_price.replace(",", ""))
-                        source_price = float(m.group(1)) if m else 0.0
-                    except:
-                        source_price = 0.0
-                else:
-                    source_price = float(raw_price)
-
-                orig_price = item.get("Product Price Before Discount") or item.get("original_price") or item.get("price_before_discount") or item.get("price_original") or ""
-                savings = item.get("Product Savings") or item.get("savings") or item.get("discount_amount") or ""
-                discount_info_str = ""
-                if orig_price:
-                    discount_info_str += f"Original: {orig_price} "
-                if savings:
-                    discount_info_str += f"({savings})"
-                discount_info_str = discount_info_str.strip()
-
-                raw_shipping = item.get("shipping") or item.get("shipping_cost") or item.get("shipping_price") or 0.0
-                if isinstance(raw_shipping, str):
-                    import re
-                    try:
-                        m = re.search(r"([0-9]+(?:\.[0-9]+)?)", raw_shipping.replace(",", ""))
-                        shipping_cost = float(m.group(1)) if m else 0.0
-                    except:
-                        shipping_cost = 0.0
-                else:
-                    shipping_cost = float(raw_shipping)
-
-                raw_stock = item.get("stock") or item.get("quantity") or item.get("availability") or item.get("Product Availability") or item.get("stock_status") or 10
-                stock = 10
-                if isinstance(raw_stock, str):
-                    if "out" in raw_stock.lower():
-                        stock = 0
-                    else:
-                        import re
-                        m = re.search(r"(\d+)", raw_stock)
-                        stock = int(m.group(1)) if m else 10
-                elif isinstance(raw_stock, (int, float)):
-                    stock = int(raw_stock)
-
-                raw_images = item.get("All Images") or item.get("Product Image") or item.get("images") or item.get("image_urls") or item.get("image") or item.get("imageUrl") or item.get("main_image") or ""
-                if isinstance(raw_images, list):
-                    image_urls = "|".join(raw_images)
-                else:
-                    image_urls = str(raw_images)
-
-                brand = item.get("Product Brand") or item.get("brand") or item.get("brandName") or item.get("brand_name") or ""
-                brand_lower = brand.strip().lower()
-                if not brand or brand_lower in ["no brand name", "not branded", "unbranded", "generic", "none", "n/a", "no brand", "brand not available", "not available"]:
-                    brand = "Unbranded"
-                else:
-                    brand = brand.strip()
-
-                upc = item.get("UPC") or item.get("upc") or item.get("barcode") or item.get("gtin") or "brand not available"
-
-                rating = float(item.get("Product Rating") or item.get("rating") or item.get("reviews_rating") or item.get("rating_average") or 0.0)
-                review_count = int(item.get("Product Reviews") or item.get("review_count") or item.get("reviews_count") or 0)
-                seller_name = item.get("Product Seller") or item.get("seller_name") or item.get("sold_by") or item.get("seller") or ""
+        try:\n            for item in raw_products:\n                # \u2500\u2500 Extract and normalize Walmart Search API fields \u2500\u2500\u2500\n                title = item.get(\"product_name\") or item.get(\"title\") or item.get(\"name\") or \"\"\n                if not title or not title.strip():\n                    logger.debug(f\"Skipping item with no title: {item}\")\n                    continue\n                title = title.strip()\n\n                # Product ID (use Walmart usItemId if available, else product_id)\n                source_product_id = str(item.get(\"product_id\") or item.get(\"usItemId\") or item.get(\"id\") or \"\")\n                if not source_product_id or source_product_id == \"None\":\n                    import hashlib\n                    source_product_id = hashlib.md5(title.encode('utf-8')).hexdigest()[:12]\n\n                # Product URL\n                source_url = str(item.get(\"url\") or item.get(\"product_url\") or item.get(\"link\") or \"\")\n\n                # Current price (sale/discounted price)\n                try:\n                    source_price = float(item.get(\"price\") or 0.0)\n                except (ValueError, TypeError):\n                    source_price = 0.0\n\n                # Original price (for discount calculation and filtering)\n                try:\n                    original_price = float(item.get(\"original_price\") or item.get(\"list_price\") or source_price)\n                except (ValueError, TypeError):\n                    original_price = source_price\n\n                # Discount percentage (from ScraperAPI or calculate)\n                try:\n                    discount_pct = float(item.get(\"discount_percent\") or 0.0)\n                    if discount_pct == 0 and original_price > source_price and source_price > 0:\n                        discount_pct = round(((original_price - source_price) / original_price) * 100, 2)\n                except (ValueError, TypeError):\n                    discount_pct = 0.0\n\n                # Shipping cost (Walmart typically includes shipping or is flat rate)\n                try:\n                    shipping_cost = float(item.get(\"shipping\") or item.get(\"shipping_cost\") or 0.0)\n                except (ValueError, TypeError):\n                    shipping_cost = 0.0\n\n                # Stock/Availability\n                raw_stock = item.get(\"availability\") or item.get(\"stock_status\") or item.get(\"stock\") or \"in_stock\"\n                stock = 10  # Default assumption\n                if isinstance(raw_stock, str):\n                    if \"out\" in raw_stock.lower() or \"unavailable\" in raw_stock.lower():\n                        stock = 0\n                    elif \"in_stock\" in raw_stock.lower() or \"in stock\" in raw_stock.lower():\n                        stock = 10  # Assume available\n                    else:\n                        # Try to extract number\n                        import re\n                        m = re.search(r\"(\\d+)\", raw_stock)\n                        stock = int(m.group(1)) if m else 10\n                elif isinstance(raw_stock, (int, float)):\n                    stock = int(raw_stock) if raw_stock > 0 else 10\n\n                # Images\n                raw_images = item.get(\"image\") or item.get(\"thumbnail_url\") or item.get(\"images\") or \"\"\n                if isinstance(raw_images, list):\n                    image_urls = \"|\".join(str(img) for img in raw_images if img)\n                else:\n                    image_urls = str(raw_images) if raw_images else \"\"\n\n                # Brand\n                brand = str(item.get(\"brand\") or item.get(\"brand_name\") or \"\").strip()\n                brand_lower = brand.lower() if brand else \"\"\n                if not brand or brand_lower in [\"no brand name\", \"not branded\", \"unbranded\", \"generic\", \"none\", \"n/a\", \"no brand\"]:\n                    brand = \"Unbranded\"\n\n                # Short description (for reference)\n                description = str(item.get(\"description\") or item.get(\"short_description\") or \"\").strip()\n\n                # UPC/SKU\n                upc = str(item.get(\"upc\") or item.get(\"sku\") or item.get(\"barcode\") or \"\")\n\n                # Rating and reviews\n                try:\n                    rating = float(item.get(\"rating\") or item.get(\"average_rating\") or 0.0)\n                    if rating > 5:\n                        rating = rating / 100.0  # In case it's sent as percentage\n                except (ValueError, TypeError):\n                    rating = 0.0\n\n                try:\n                    review_count = int(item.get(\"review_count\") or item.get(\"reviews\") or item.get(\"num_reviews\") or 0)\n                except (ValueError, TypeError):\n                    review_count = 0\n\n                # Seller name\n                seller_name = str(item.get(\"seller_name\") or item.get(\"seller\") or \"Walmart\")\n\n                logger.info(f\"Processing Walmart product: {title} | Price: ${source_price} | Original: ${original_price} | Discount: {discount_pct}%\")"
 
                 sr = db.query(ScanResult).filter(
                     ScanResult.source_product_id == str(source_product_id)
@@ -909,6 +741,8 @@ def create_app(static_dir: str) -> FastAPI:
                     completed_at=datetime.utcnow()
                 ))
                 db.commit()
+            
+            logger.info(f"✅ WALMART WEBHOOK COMPLETE: Imported {imported_count}, Updated {updated_count}")
 
         except Exception as e:
             db.rollback()
@@ -935,10 +769,9 @@ def create_app(static_dir: str) -> FastAPI:
     @api.post("/scraper/trigger")
     async def trigger_walmart_scraper(req: Request, db: Session = Depends(get_db)):
         """
-        Triggers ScraperAPI with JavaScript rendering to scrape Walmart Flash Deals.
-        Uses render=true (NOT autoparse) so we get the real rendered HTML back,
-        which contains the __WML_REDUX_INITIAL_STATE__ embedded JSON with product data.
-        ScraperAPI sends the result back to our /api/import/walmart webhook asynchronously.
+        Triggers ScraperAPI Walmart Search API (structured endpoint) to scrape Walmart Flash Deals.
+        Returns clean JSON with product data (name, price, original_price, images, brand, etc.)
+        instead of raw HTML. ScraperAPI sends JSON directly to our /api/import/walmart webhook.
         """
         api_key = _get_setting(db, "scraperapi_api_key", "040b71425d6ecc915689b43c31b2688f")
         default_url = _get_setting(db, "walmart_target_url", "https://www.walmart.com/shop/deals/flash-deals")
@@ -949,6 +782,10 @@ def create_app(static_dir: str) -> FastAPI:
                 target_urls = payload_data["urls"]
             elif payload_data and "target_url" in payload_data:
                 target_urls = [payload_data["target_url"]]
+            elif payload_data and "pages" in payload_data:
+                # Support multi-page scraping: {"pages": 3} = scrape 3 pages
+                pages = int(payload_data.get("pages", 1))
+                target_urls = [f"page_{i}" for i in range(1, pages + 1)]
             else:
                 target_urls = [default_url]
         except Exception:
@@ -964,21 +801,30 @@ def create_app(static_dir: str) -> FastAPI:
         async with httpx.AsyncClient(timeout=30.0) as client:
             try:
                 responses = []
-                for target in target_urls:
-                    # Use render=true WITHOUT autoparse so ScraperAPI returns the
-                    # full JavaScript-rendered HTML. The __WML_REDUX_INITIAL_STATE__
-                    # embedded JSON in that HTML contains the real product data.
+                for idx, target in enumerate(target_urls, 1):
+                    # Determine page number for pagination
+                    page = idx if target.startswith("page_") else 1
+                    
+                    # Use Walmart Search API structured endpoint for clean JSON responses
+                    # This returns product data with consistent field names instead of requiring HTML parsing
                     payload = {
                         "apiKey": api_key,
-                        "url": target,
-                        "render": "true",
-                        "country_code": "us",
-                        "callback": {
-                            "type": "webhook",
+                        "url": "https://api.scraperapi.com/structured/walmart/search",
+                        "apiParams": {
+                            "query": "flash deals",
+                            "page": page,
+                            "country_code": "us",
+                            "output_format": "json"
+                        },
+                        "webhookOutput": {
                             "url": webhook_url
+                        },
+                        "meta": {
+                            "source": "flash_deals",
+                            "page": page
                         }
                     }
-                    logger.info(f"Triggering ScraperAPI render job for {target} -> webhook {webhook_url}")
+                    logger.info(f"Triggering ScraperAPI Walmart Search API (page {page}) -> webhook {webhook_url}")
                     res = await client.post("https://async.scraperapi.com/jobs", headers={"Content-Type": "application/json"}, json=payload)
                     res.raise_for_status()
                     responses.append(res.json())
@@ -986,7 +832,7 @@ def create_app(static_dir: str) -> FastAPI:
 
                 return {
                     "status": "success",
-                    "message": f"Started {len(target_urls)} ScraperAPI render job(s). Products will appear in Scan Results once ScraperAPI finishes and calls back.",
+                    "message": f"Started {len(target_urls)} ScraperAPI Walmart Search job(s). Products will appear in Scan Results once ScraperAPI finishes and calls back.",
                     "data": responses
                 }
             except Exception as e:
