@@ -68,80 +68,130 @@ async def search_google_shopping_prices(
     email: str, 
     password: str
 ) -> Optional[Dict[str, Any]]:
+    """Single keyword Google Shopping lookup via DataForSEO task workflow."""
+    results = await batch_google_shopping_prices([keyword], email, password)
+    return results.get(keyword)
+
+
+async def batch_google_shopping_prices(
+    keywords: List[str],
+    email: str,
+    password: str
+) -> Dict[str, Optional[Dict[str, Any]]]:
     """
-    Searches Google Shopping using DataForSEO merchant/google/products task workflow.
-    POST task → poll → GET results.
+    Batch Google Shopping price lookup for multiple keywords.
+    Posts all tasks at once, waits, then fetches all results in parallel.
+    Much faster than sequential lookups.
     """
-    if not email or not password:
-        return None
+    if not email or not password or not keywords:
+        return {}
 
     import asyncio
     headers = {
         "Authorization": _get_auth_header(email, password),
         "Content-Type": "application/json"
     }
-    
+
     async with httpx.AsyncClient(timeout=30.0) as client:
-        try:
-            # Step 1: Create task
-            post_url = f"{DATAFORSEO_BASE_URL}/merchant/google/products/task_post"
-            payload = [{
-                "keyword": keyword,
+        # Step 1: Post all tasks at once
+        payload = [
+            {
+                "keyword": kw,
                 "language_code": "en",
                 "location_code": 2840,
-                "sort_by": "price_low_to_high"
-            }]
-            logger.info(f"DataForSEO: posting Google Shopping task for '{keyword}'")
-            post_resp = await client.post(post_url, headers=headers, json=payload)
+                "sort_by": "price_low_to_high",
+                "device": "desktop",
+                "os": "windows"
+            }
+            for kw in keywords
+        ]
+        try:
+            logger.info(f"DataForSEO: posting {len(keywords)} Google Shopping tasks")
+            post_resp = await client.post(
+                f"{DATAFORSEO_BASE_URL}/merchant/google/products/task_post",
+                headers=headers, json=payload
+            )
             post_data = post_resp.json()
-            
-            tasks = post_data.get("tasks") or []
-            if not tasks or tasks[0].get("status_code") != 20100:
-                logger.error(f"Task post failed: {tasks[0].get('status_message') if tasks else 'no tasks'}")
-                return None
-            
-            task_id = tasks[0].get("id")
-            if not task_id:
-                return None
-            
-            # Step 2: Poll for results
-            get_url = f"{DATAFORSEO_BASE_URL}/merchant/google/products/task_get/advanced/{task_id}"
-            for attempt in range(6):
-                await asyncio.sleep(5)
-                logger.info(f"DataForSEO: fetching task {task_id}, attempt {attempt+1}")
-                get_resp = await client.get(get_url, headers=headers)
+        except Exception as e:
+            logger.error(f"DataForSEO batch post failed: {e}")
+            return {}
+
+        tasks_posted = post_data.get("tasks") or []
+        # Map keyword → task_id
+        kw_to_task = {}
+        for i, task in enumerate(tasks_posted):
+            if task.get("status_code") in (20100, 20000):
+                kw = keywords[i] if i < len(keywords) else None
+                tid = task.get("id")
+                if kw and tid:
+                    kw_to_task[kw] = tid
+            else:
+                kw = keywords[i] if i < len(keywords) else "?"
+                logger.error(f"Task post failed for '{kw}': {task.get('status_message')}")
+
+        if not kw_to_task:
+            return {}
+
+        # Step 2: Wait for tasks to complete
+        logger.info(f"Waiting 12s for {len(kw_to_task)} tasks to complete...")
+        await asyncio.sleep(12)
+
+        # Step 3: Fetch all results
+        results = {}
+        for kw, task_id in kw_to_task.items():
+            try:
+                get_resp = await client.get(
+                    f"{DATAFORSEO_BASE_URL}/merchant/google/products/task_get/advanced/{task_id}",
+                    headers=headers
+                )
                 get_data = get_resp.json()
-                
                 result_tasks = get_data.get("tasks") or []
                 if not result_tasks:
                     continue
-                    
-                result_task = result_tasks[0]
-                status = result_task.get("status_code")
-                
+
+                rt = result_tasks[0]
+                status = rt.get("status_code")
+
                 if status == 20000:
                     prices = []
-                    for result in (result_task.get("result") or []):
+                    for result in (rt.get("result") or []):
                         for item in (result.get("items") or []):
-                            p = item.get("price") or item.get("price_from")
-                            if p:
+                            p = item.get("price")
+                            if p is not None:
                                 try: prices.append(float(p))
                                 except: pass
                     if prices:
-                        logger.info(f"DataForSEO: found {len(prices)} prices for '{keyword}', low=${min(prices)}")
-                        return {"low": min(prices), "high": max(prices), "count": len(prices)}
-                    logger.info(f"DataForSEO: no prices found for '{keyword}'")
-                    return None
-                elif status == 40602:
-                    logger.info(f"Task still in queue, waiting...")
-                    continue
+                        results[kw] = {"low": min(prices), "high": max(prices), "count": len(prices)}
+                        logger.info(f"  '{kw}': {len(prices)} prices, low=${min(prices)}")
+                    else:
+                        results[kw] = None
+                        logger.info(f"  '{kw}': no prices found")
+                elif status == 20100:
+                    # Still processing - wait a bit more and retry once
+                    logger.info(f"  '{kw}': still processing, retrying in 8s...")
+                    await asyncio.sleep(8)
+                    retry_resp = await client.get(
+                        f"{DATAFORSEO_BASE_URL}/merchant/google/products/task_get/advanced/{task_id}",
+                        headers=headers
+                    )
+                    retry_data = retry_resp.json()
+                    retry_task = (retry_data.get("tasks") or [{}])[0]
+                    if retry_task.get("status_code") == 20000:
+                        prices = []
+                        for result in (retry_task.get("result") or []):
+                            for item in (result.get("items") or []):
+                                p = item.get("price")
+                                if p is not None:
+                                    try: prices.append(float(p))
+                                    except: pass
+                        results[kw] = {"low": min(prices), "high": max(prices), "count": len(prices)} if prices else None
+                    else:
+                        results[kw] = None
                 else:
-                    logger.error(f"Task get error {status}: {result_task.get('status_message')}")
-                    return None
-                    
-            logger.warning(f"DataForSEO task timed out for '{keyword}'")
-            return None
-            
-        except Exception as e:
-            logger.error(f"DataForSEO Google Shopping error: {e}")
-            return None
+                    logger.error(f"  '{kw}': error {status}: {rt.get('status_message')}")
+                    results[kw] = None
+            except Exception as e:
+                logger.error(f"DataForSEO get failed for '{kw}': {e}")
+                results[kw] = None
+
+    return results

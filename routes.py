@@ -759,7 +759,7 @@ def create_app(static_dir: str) -> FastAPI:
         Limit 10 per call to stay within Vercel timeout.
         """
         import re
-        from api.dataforseo import check_search_volume, search_google_shopping_prices
+        from api.dataforseo import batch_google_shopping_prices
 
         try:
             body = await req.json()
@@ -772,7 +772,6 @@ def create_app(static_dir: str) -> FastAPI:
         if not email or not password:
             raise HTTPException(400, "DataForSEO credentials not configured in API Connections page.")
 
-        min_sv = _get_setting(db, "google_min_search_volume", "500", int)
         min_margin_pct = _get_setting(db, "google_shopping_min_margin", "30.0", float)
         bonanza_fee = _get_setting(db, "bonanza_google_fee", "20.0", float)
 
@@ -791,12 +790,15 @@ def create_app(static_dir: str) -> FastAPI:
 
         keywords = [clean_title(r.title) for r in scan_results]
 
+        # Batch ALL Google Shopping lookups - post all tasks at once, wait once, get all
+        logger.info(f"Posting {len(keywords)} Google Shopping tasks in batch...")
+        shopping_map = await batch_google_shopping_prices(keywords, email, password)
+
         passed = 0
         failed = 0
 
         for sr, kw in zip(scan_results, keywords):
-            # Check Google Shopping price only (search volume removed to save credits)
-            shopping = await search_google_shopping_prices(kw, email, password)
+            shopping = shopping_map.get(kw)
             if not shopping or not shopping.get("low", 0):
                 sr.status = "ignored"
                 db.commit()
