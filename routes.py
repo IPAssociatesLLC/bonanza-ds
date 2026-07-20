@@ -672,7 +672,102 @@ def create_app(static_dir: str) -> FastAPI:
         updated_count = 0
         processed_ids = []
 
-        try:\n            for item in raw_products:\n                # \u2500\u2500 Extract and normalize Walmart Search API fields \u2500\u2500\u2500\n                title = item.get(\"product_name\") or item.get(\"title\") or item.get(\"name\") or \"\"\n                if not title or not title.strip():\n                    logger.debug(f\"Skipping item with no title: {item}\")\n                    continue\n                title = title.strip()\n\n                # Product ID (use Walmart usItemId if available, else product_id)\n                source_product_id = str(item.get(\"product_id\") or item.get(\"usItemId\") or item.get(\"id\") or \"\")\n                if not source_product_id or source_product_id == \"None\":\n                    import hashlib\n                    source_product_id = hashlib.md5(title.encode('utf-8')).hexdigest()[:12]\n\n                # Product URL\n                source_url = str(item.get(\"url\") or item.get(\"product_url\") or item.get(\"link\") or \"\")\n\n                # Current price (sale/discounted price)\n                try:\n                    source_price = float(item.get(\"price\") or 0.0)\n                except (ValueError, TypeError):\n                    source_price = 0.0\n\n                # Original price (for discount calculation and filtering)\n                try:\n                    original_price = float(item.get(\"original_price\") or item.get(\"list_price\") or source_price)\n                except (ValueError, TypeError):\n                    original_price = source_price\n\n                # Discount percentage (from ScraperAPI or calculate)\n                try:\n                    discount_pct = float(item.get(\"discount_percent\") or 0.0)\n                    if discount_pct == 0 and original_price > source_price and source_price > 0:\n                        discount_pct = round(((original_price - source_price) / original_price) * 100, 2)\n                except (ValueError, TypeError):\n                    discount_pct = 0.0\n\n                # Shipping cost (Walmart typically includes shipping or is flat rate)\n                try:\n                    shipping_cost = float(item.get(\"shipping\") or item.get(\"shipping_cost\") or 0.0)\n                except (ValueError, TypeError):\n                    shipping_cost = 0.0\n\n                # Stock/Availability\n                raw_stock = item.get(\"availability\") or item.get(\"stock_status\") or item.get(\"stock\") or \"in_stock\"\n                stock = 10  # Default assumption\n                if isinstance(raw_stock, str):\n                    if \"out\" in raw_stock.lower() or \"unavailable\" in raw_stock.lower():\n                        stock = 0\n                    elif \"in_stock\" in raw_stock.lower() or \"in stock\" in raw_stock.lower():\n                        stock = 10  # Assume available\n                    else:\n                        # Try to extract number\n                        import re\n                        m = re.search(r\"(\\d+)\", raw_stock)\n                        stock = int(m.group(1)) if m else 10\n                elif isinstance(raw_stock, (int, float)):\n                    stock = int(raw_stock) if raw_stock > 0 else 10\n\n                # Images\n                raw_images = item.get(\"image\") or item.get(\"thumbnail_url\") or item.get(\"images\") or \"\"\n                if isinstance(raw_images, list):\n                    image_urls = \"|\".join(str(img) for img in raw_images if img)\n                else:\n                    image_urls = str(raw_images) if raw_images else \"\"\n\n                # Brand\n                brand = str(item.get(\"brand\") or item.get(\"brand_name\") or \"\").strip()\n                brand_lower = brand.lower() if brand else \"\"\n                if not brand or brand_lower in [\"no brand name\", \"not branded\", \"unbranded\", \"generic\", \"none\", \"n/a\", \"no brand\"]:\n                    brand = \"Unbranded\"\n\n                # Short description (for reference)\n                description = str(item.get(\"description\") or item.get(\"short_description\") or \"\").strip()\n\n                # UPC/SKU\n                upc = str(item.get(\"upc\") or item.get(\"sku\") or item.get(\"barcode\") or \"\")\n\n                # Rating and reviews\n                try:\n                    rating = float(item.get(\"rating\") or item.get(\"average_rating\") or 0.0)\n                    if rating > 5:\n                        rating = rating / 100.0  # In case it's sent as percentage\n                except (ValueError, TypeError):\n                    rating = 0.0\n\n                try:\n                    review_count = int(item.get(\"review_count\") or item.get(\"reviews\") or item.get(\"num_reviews\") or 0)\n                except (ValueError, TypeError):\n                    review_count = 0\n\n                # Seller name\n                seller_name = str(item.get(\"seller_name\") or item.get(\"seller\") or \"Walmart\")\n\n                logger.info(f\"Processing Walmart product: {title} | Price: ${source_price} | Original: ${original_price} | Discount: {discount_pct}%\")"
+        try:
+            for item in raw_products:
+                # Extract and normalize Walmart Search API fields
+                title = item.get("product_name") or item.get("title") or item.get("name") or ""
+                if not title or not title.strip():
+                    logger.debug(f"Skipping item with no title: {item}")
+                    continue
+                title = title.strip()
+
+                # Product ID (use Walmart usItemId if available, else product_id)
+                source_product_id = str(item.get("product_id") or item.get("usItemId") or item.get("id") or "")
+                if not source_product_id or source_product_id == "None":
+                    import hashlib
+                    source_product_id = hashlib.md5(title.encode('utf-8')).hexdigest()[:12]
+
+                # Product URL
+                source_url = str(item.get("url") or item.get("product_url") or item.get("link") or "")
+
+                # Current price (sale/discounted price)
+                try:
+                    source_price = float(item.get("price") or 0.0)
+                except (ValueError, TypeError):
+                    source_price = 0.0
+
+                # Original price (for discount calculation and filtering)
+                try:
+                    original_price = float(item.get("original_price") or item.get("list_price") or source_price)
+                except (ValueError, TypeError):
+                    original_price = source_price
+
+                # Discount percentage (from ScraperAPI or calculate)
+                try:
+                    discount_pct = float(item.get("discount_percent") or 0.0)
+                    if discount_pct == 0 and original_price > source_price and source_price > 0:
+                        discount_pct = round(((original_price - source_price) / original_price) * 100, 2)
+                except (ValueError, TypeError):
+                    discount_pct = 0.0
+
+                # Shipping cost (Walmart typically includes shipping or is flat rate)
+                try:
+                    shipping_cost = float(item.get("shipping") or item.get("shipping_cost") or 0.0)
+                except (ValueError, TypeError):
+                    shipping_cost = 0.0
+
+                # Stock/Availability
+                raw_stock = item.get("availability") or item.get("stock_status") or item.get("stock") or "in_stock"
+                stock = 10  # Default assumption
+                if isinstance(raw_stock, str):
+                    if "out" in raw_stock.lower() or "unavailable" in raw_stock.lower():
+                        stock = 0
+                    elif "in_stock" in raw_stock.lower() or "in stock" in raw_stock.lower():
+                        stock = 10  # Assume available
+                    else:
+                        # Try to extract number
+                        import re
+                        m = re.search(r"(\d+)", raw_stock)
+                        stock = int(m.group(1)) if m else 10
+                elif isinstance(raw_stock, (int, float)):
+                    stock = int(raw_stock) if raw_stock > 0 else 10
+
+                # Images
+                raw_images = item.get("image") or item.get("thumbnail_url") or item.get("images") or ""
+                if isinstance(raw_images, list):
+                    image_urls = "|".join(str(img) for img in raw_images if img)
+                else:
+                    image_urls = str(raw_images) if raw_images else ""
+
+                # Brand
+                brand = str(item.get("brand") or item.get("brand_name") or "").strip()
+                brand_lower = brand.lower() if brand else ""
+                if not brand or brand_lower in ["no brand name", "not branded", "unbranded", "generic", "none", "n/a", "no brand"]:
+                    brand = "Unbranded"
+
+                # Short description (for reference)
+                description = str(item.get("description") or item.get("short_description") or "").strip()
+
+                # UPC/SKU
+                upc = str(item.get("upc") or item.get("sku") or item.get("barcode") or "")
+
+                # Rating and reviews
+                try:
+                    rating = float(item.get("rating") or item.get("average_rating") or 0.0)
+                    if rating > 5:
+                        rating = rating / 100.0  # In case it's sent as percentage
+                except (ValueError, TypeError):
+                    rating = 0.0
+
+                try:
+                    review_count = int(item.get("review_count") or item.get("reviews") or item.get("num_reviews") or 0)
+                except (ValueError, TypeError):
+                    review_count = 0
+
+                # Seller name
+                seller_name = str(item.get("seller_name") or item.get("seller") or "Walmart")
+
+                logger.info(f"Processing Walmart product: {title} | Price: ${source_price} | Original: ${original_price} | Discount: {discount_pct}%")and\"]:\n                    brand = \"Unbranded\"\n\n                # Short description (for reference)\n                description = str(item.get(\"description\") or item.get(\"short_description\") or \"\").strip()\n\n                # UPC/SKU\n                upc = str(item.get(\"upc\") or item.get(\"sku\") or item.get(\"barcode\") or \"\")\n\n                # Rating and reviews\n                try:\n                    rating = float(item.get(\"rating\") or item.get(\"average_rating\") or 0.0)\n                    if rating > 5:\n                        rating = rating / 100.0  # In case it's sent as percentage\n                except (ValueError, TypeError):\n                    rating = 0.0\n\n                try:\n                    review_count = int(item.get(\"review_count\") or item.get(\"reviews\") or item.get(\"num_reviews\") or 0)\n                except (ValueError, TypeError):\n                    review_count = 0\n\n                # Seller name\n                seller_name = str(item.get(\"seller_name\") or item.get(\"seller\") or \"Walmart\")\n\n                logger.info(f\"Processing Walmart product: {title} | Price: ${source_price} | Original: ${original_price} | Discount: {discount_pct}%\")"
 
                 sr = db.query(ScanResult).filter(
                     ScanResult.source_product_id == str(source_product_id)
