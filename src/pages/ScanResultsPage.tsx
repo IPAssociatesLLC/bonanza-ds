@@ -104,6 +104,39 @@ export function ScanResultsPage() {
   const [importLoading, setImportLoading] = useState(false)
   const [triggerLoading, setTriggerLoading] = useState(false)
   const [triggerSuccess, setTriggerSuccess] = useState<string | null>(null)
+  const [sortField, setSortField] = useState<string>("created_at")
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc")
+  const [deleteLoading, setDeleteLoading] = useState(false)
+
+  const handleSort = (field: string) => {
+    if (sortField === field) {
+      setSortDir(d => d === "asc" ? "desc" : "asc")
+    } else {
+      setSortField(field)
+      setSortDir("desc")
+    }
+  }
+  const SortIcon = ({ field }: { field: string }) => {
+    if (sortField !== field) return <span className="ml-1 text-muted-foreground/40">↕</span>
+    return <span className="ml-1">{sortDir === "asc" ? "↑" : "↓"}</span>
+  }
+
+  const handleDeleteSelected = async () => {
+    if (selected.size === 0) return
+    if (!confirm(`Delete ${selected.size} selected product(s)?`)) return
+    setDeleteLoading(true)
+    try {
+      await Promise.all([...selected].map(id =>
+        fetch(`/api/scan-results/${id}`, { method: "DELETE" })
+      ))
+      setSelected(new Set())
+      refetch()
+    } catch (e) {
+      setActionError("Failed to delete selected products")
+    } finally {
+      setDeleteLoading(false)
+    }
+  }
 
   const queryParams = useMemo(() => {
     const params = new URLSearchParams()
@@ -111,7 +144,7 @@ export function ScanResultsPage() {
     if (sourceFilter !== "all") params.set("source", sourceFilter)
     if (minMargin > 0) params.set("min_margin", String(minMargin))
     if (categoryFilter.trim()) params.set("category", categoryFilter.trim())
-    params.set("limit", "100")
+    params.set("limit", "200")
     return params.toString()
   }, [statusFilter, sourceFilter, minMargin, categoryFilter])
 
@@ -124,6 +157,16 @@ export function ScanResultsPage() {
 
   const allSelected = opportunities.length > 0 && opportunities.every((o) => selected.has(o.id))
   const _someSelected = selected.size > 0 && !allSelected
+
+  // Client-side sorting
+  const sortedOpportunities = useMemo(() => {
+    return [...opportunities].sort((a, b) => {
+      const aVal = (a as any)[sortField] ?? 0
+      const bVal = (b as any)[sortField] ?? 0
+      if (typeof aVal === "string") return sortDir === "asc" ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal)
+      return sortDir === "asc" ? aVal - bVal : bVal - aVal
+    })
+  }, [opportunities, sortField, sortDir])
 
   const toggleAll = useCallback(() => {
     if (allSelected) {
@@ -240,6 +283,15 @@ export function ScanResultsPage() {
         description={`Found ${data?.total || 0} potential items from the Product Scout scanner.`}
         actions={
           <div className="flex gap-2">
+            <Button
+              variant="outline"
+              className="text-destructive border-destructive/30 hover:bg-destructive/10"
+              onClick={handleDeleteSelected}
+              disabled={selected.size === 0 || deleteLoading}
+            >
+              {deleteLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              {selected.size > 0 ? `Delete Selected (${selected.size})` : "Delete Selected"}
+            </Button>
             <Button
               variant="outline"
               className="text-destructive border-destructive/30 hover:bg-destructive/10"
@@ -369,23 +421,23 @@ export function ScanResultsPage() {
                         aria-label="Select all"
                       />
                     </TableHead>
-                    <TableHead>Product</TableHead>
-                    <TableHead>Brand</TableHead>
+                    <TableHead className="cursor-pointer select-none" onClick={() => handleSort("title")}>Product <SortIcon field="title" /></TableHead>
+                    <TableHead className="cursor-pointer select-none" onClick={() => handleSort("brand")}>Brand <SortIcon field="brand" /></TableHead>
                     <TableHead>Source</TableHead>
-                    <TableHead className="text-right">Sale Price</TableHead>
-                    <TableHead className="text-right">Orig. Price</TableHead>
-                    <TableHead className="text-right">Discount</TableHead>
-                    <TableHead className="text-right">Rating</TableHead>
-                    <TableHead className="text-right">Stock</TableHead>
-                    <TableHead className="text-right">Margin %</TableHead>
+                    <TableHead className="text-right cursor-pointer select-none" onClick={() => handleSort("source_price")}>Sale Price <SortIcon field="source_price" /></TableHead>
+                    <TableHead className="text-right cursor-pointer select-none" onClick={() => handleSort("original_price")}>Orig. Price <SortIcon field="original_price" /></TableHead>
+                    <TableHead className="text-right cursor-pointer select-none" onClick={() => handleSort("discount_pct")}>Discount <SortIcon field="discount_pct" /></TableHead>
+                    <TableHead className="text-right cursor-pointer select-none" onClick={() => handleSort("rating")}>Rating <SortIcon field="rating" /></TableHead>
+                    <TableHead className="text-right cursor-pointer select-none" onClick={() => handleSort("stock")}>Stock <SortIcon field="stock" /></TableHead>
+                    <TableHead className="text-right cursor-pointer select-none" onClick={() => handleSort("margin_pct")}>Margin % <SortIcon field="margin_pct" /></TableHead>
                     <TableHead className="text-right">Cashback</TableHead>
-                    <TableHead className="text-right">Final Profit</TableHead>
+                    <TableHead className="text-right cursor-pointer select-none" onClick={() => handleSort("final_profit")}>Final Profit <SortIcon field="final_profit" /></TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="w-[50px]"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {opportunities.map((opp) => (
+                  {sortedOpportunities.map((opp) => (
                     <TableRow key={opp.id}>
                       <TableCell>
                         <Checkbox

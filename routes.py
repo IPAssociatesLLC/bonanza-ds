@@ -591,6 +591,16 @@ def create_app(static_dir: str) -> FastAPI:
         db.commit()
         return {"deleted": count}
 
+    @api.delete("/scan-results/{result_id}")
+    def delete_scan_result(result_id: int, db: Session = Depends(get_db)):
+        """Delete a single scan result by ID."""
+        r = db.query(ScanResult).filter(ScanResult.id == result_id).first()
+        if not r:
+            raise HTTPException(404, "Scan result not found")
+        db.delete(r)
+        db.commit()
+        return {"deleted": result_id}
+
 
     @api.get("/opportunities/{opp_id}")
     def get_opportunity(opp_id: int, db: Session = Depends(get_db)):
