@@ -601,6 +601,71 @@ def create_app(static_dir: str) -> FastAPI:
         db.commit()
         return {"deleted": result_id}
 
+    @api.post("/scan-results/reset-status")
+    def reset_scan_results_status(db: Session = Depends(get_db)):
+        """Reset all ignored scan results back to new so they can be filtered again."""
+        count = db.query(ScanResult).filter(ScanResult.status == "ignored").update({"status": "new"})
+        db.commit()
+        return {"reset": count}
+
+    @api.post("/scan-results/send-to-opportunities")
+    def send_to_opportunities_direct(req_body: dict, db: Session = Depends(get_db)):
+        """
+        Bypass DataForSEO - send selected scan results directly to Opportunities
+        priced using Pricing Rules settings.
+        """
+        ids = req_body.get("ids", [])
+        if ids:
+            results = db.query(ScanResult).filter(ScanResult.id.in_(ids)).all()
+        else:
+            results = db.query(ScanResult).filter(ScanResult.status == "new").all()
+
+        bonanza_fee = _get_setting(db, "bonanza_google_fee", "20.0", float)
+        min_margin = _get_setting(db, "default_min_margin", "30.0", float)
+        margin_factor = 1.0 - (bonanza_fee / 100.0) - (min_margin / 100.0)
+
+        created = 0
+        for sr in results:
+            if sr.source_price <= 0:
+                continue
+            target_price = round(sr.source_price / margin_factor, 2) if margin_factor > 0.1 else round(sr.source_price * 1.6, 2)
+            net_profit = round(target_price * (1 - bonanza_fee / 100.0) - sr.source_price, 2)
+            net_margin = round((net_profit / target_price) * 100, 1) if target_price > 0 else 0.0
+
+            cb_rate, cb_amount, cb_site = 0.0, 0.0, ""
+            try:
+                cb_sites = db.query(CashbackSite).filter(CashbackSite.supported_stores.ilike("%walmart%")).all()
+                if cb_sites:
+                    best_cb = max(cb_sites, key=lambda s: s.default_rate)
+                    cb_rate = best_cb.default_rate
+                    cb_amount = round(sr.source_price * cb_rate / 100.0, 2)
+                    cb_site = best_cb.name
+            except Exception:
+                pass
+
+            opp = Opportunity(
+                source=sr.source, source_url=sr.source_url,
+                source_product_id=sr.source_product_id, title=sr.title,
+                description="", image_urls=sr.image_urls or "",
+                category=sr.category, brand=sr.brand,
+                source_price=sr.source_price, shipping_cost=sr.shipping_cost or 0.0,
+                target_price=target_price, google_low_price=0.0, google_high_price=0.0,
+                monthly_search_volume=0,
+                rating=sr.rating or 0.0, review_count=sr.review_count or 0,
+                stock=sr.stock or 10, seller_name="Walmart",
+                margin_pct=net_margin, cashback_rate=cb_rate,
+                cashback_amount=cb_amount, best_cashback_site=cb_site,
+                final_profit=round(net_profit + cb_amount, 2),
+                final_margin_pct=net_margin, origin="manual_scout",
+                status="new", created_at=datetime.utcnow(), updated_at=datetime.utcnow()
+            )
+            db.add(opp)
+            sr.status = "approved"
+            created += 1
+
+        db.commit()
+        return {"status": "ok", "sent_to_opportunities": created}
+
     @api.post("/scan-results/run-filter")
     async def run_scan_results_filter(req: Request, db: Session = Depends(get_db)):
         """
@@ -641,17 +706,11 @@ def create_app(static_dir: str) -> FastAPI:
 
         keywords = [clean_title(r.title) for r in scan_results]
 
-        # Batch search volume check (needed for filter step 2)
-        sv_map = await check_search_volume(keywords, email, password)
-        logger.info(f"Search volume results: {sv_map}")
-
         passed = 0
         failed = 0
 
         for sr, kw in zip(scan_results, keywords):
-            sv = sv_map.get(kw, 0)
-
-            # Step 1: Check Google Shopping price FIRST (most important, saves credits if search vol fails)
+            # Check Google Shopping price only (search volume removed to save credits)
             shopping = await search_google_shopping_prices(kw, email, password)
             if not shopping or not shopping.get("low", 0):
                 sr.status = "ignored"
@@ -669,14 +728,6 @@ def create_app(static_dir: str) -> FastAPI:
                 db.commit()
                 failed += 1
                 logger.info(f"REJECTED (price gap {gap_pct:.1f}% < required {min_margin_pct}% | walmart:${sr.source_price} google_low:${google_low}): {sr.title[:60]}")
-                continue
-
-            # Step 2: Check search volume
-            if sv < min_sv:
-                sr.status = "ignored"
-                db.commit()
-                failed += 1
-                logger.info(f"REJECTED (search vol {sv} < required {min_sv}): {sr.title[:60]}")
                 continue
 
             # PASSED - price just under Google Shopping lowest
@@ -707,7 +758,7 @@ def create_app(static_dir: str) -> FastAPI:
                 source_price=sr.source_price, shipping_cost=sr.shipping_cost or 0.0,
                 target_price=target_price,
                 google_low_price=google_low, google_high_price=google_high,
-                monthly_search_volume=sv,
+                monthly_search_volume=0,
                 rating=sr.rating or 0.0, review_count=sr.review_count or 0,
                 stock=sr.stock or 10, seller_name="Walmart",
                 margin_pct=net_margin, cashback_rate=cb_rate,

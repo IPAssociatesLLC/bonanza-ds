@@ -69,62 +69,47 @@ async def search_google_shopping_prices(
     password: str
 ) -> Optional[Dict[str, Any]]:
     """
-    Searches Google Shopping using DataForSEO Merchant API to find lowest competition prices.
+    Searches Google Shopping using DataForSEO SERP API to find lowest competition prices.
+    Uses /serp/google/shopping/live/advanced endpoint.
     """
     if not email or not password:
-        logger.warning("DataForSEO email or password not configured.")
         return None
 
-    url = f"{DATAFORSEO_BASE_URL}/merchant/google/products/live"
+    url = f"{DATAFORSEO_BASE_URL}/serp/google/shopping/live/advanced"
     headers = {
         "Authorization": _get_auth_header(email, password),
         "Content-Type": "application/json"
     }
-    
-    payload = [
-        {
-            "keyword": keyword,
-            "location_code": 2840, # United States
-            "language_code": "en"
-        }
-    ]
+    payload = [{
+        "keyword": keyword,
+        "location_code": 2840,
+        "language_code": "en",
+        "device": "desktop",
+        "os": "windows"
+    }]
     
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
-            logger.info(f"Querying DataForSEO Google Shopping for: {keyword}")
+            logger.info(f"DataForSEO Google Shopping SERP for: {keyword}")
             response = await client.post(url, headers=headers, json=payload)
             response.raise_for_status()
             data = response.json()
-            
             tasks = data.get("tasks") or []
             for task in tasks:
                 if task.get("status_code") == 20000:
-                    task_results = task.get("result") or []
-                    for result in task_results:
+                    for result in (task.get("result") or []):
                         items = result.get("items") or []
-                        if not items:
-                            continue
-                            
                         prices = []
                         for item in items:
-                            price = item.get("price")
-                            if price is not None:
-                                try:
-                                    prices.append(float(price))
-                                except ValueError:
-                                    continue
-                                    
+                            if item.get("type") == "shopping":
+                                p = item.get("price")
+                                if p:
+                                    try: prices.append(float(p))
+                                    except: pass
                         if prices:
-                            return {
-                                "count": len(prices),
-                                "low": min(prices),
-                                "high": max(prices),
-                                "average": round(sum(prices) / len(prices), 2),
-                                "items": items[:5]
-                            }
+                            return {"low": min(prices), "high": max(prices), "count": len(prices)}
                 else:
-                    logger.error(f"Google Shopping Task status code error: {task.get('status_code')} - {task.get('status_message')}")
+                    logger.error(f"DataForSEO Shopping error {task.get('status_code')}: {task.get('status_message')}")
         except Exception as e:
             logger.error(f"DataForSEO Google Shopping API error: {e}")
-            
     return None

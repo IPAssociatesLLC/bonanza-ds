@@ -123,8 +123,7 @@ export function ScanResultsPage() {
     return <span className="ml-1">{sortDir === "asc" ? "↑" : "↓"}</span>
   }
 
-  const handleRunFilter = async () => {
-    setFilterLoading(true)
+  const handleRunFilter = async () => {    setFilterLoading(true)
     setFilterSuccess(null)
     setActionError(null)
     let totalPassed = 0
@@ -151,6 +150,33 @@ export function ScanResultsPage() {
     } finally {
       setFilterLoading(false)
     }
+  }
+
+  const handleSendDirect = async () => {
+    if (!confirm(`Send ${selected.size > 0 ? selected.size + " selected" : "all new"} products to Opportunities using Pricing Rules?`)) return
+    setFilterLoading(true)
+    setFilterSuccess(null)
+    try {
+      const ids = selected.size > 0 ? [...selected] : []
+      const res = await fetch("/api/scan-results/send-to-opportunities", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids })
+      })
+      const data = await res.json()
+      setFilterSuccess(`Sent ${data.sent_to_opportunities} products to Opportunities page!`)
+      setSelected(new Set())
+      refetch()
+    } catch (e) {
+      setActionError("Failed to send to Opportunities")
+    } finally {
+      setFilterLoading(false)
+    }
+  }
+
+  const handleResetStatus = async () => {
+    await fetch("/api/scan-results/reset-status", { method: "POST" })
+    refetch()
   }
 
   const handleDeleteSelected = async () => {    if (selected.size === 0) return
@@ -322,6 +348,16 @@ export function ScanResultsPage() {
             >
               {deleteLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               {selected.size > 0 ? `Delete Selected (${selected.size})` : "Delete Selected"}
+            </Button>
+            <Button variant="outline" onClick={handleResetStatus}>Reset Ignored → New</Button>
+            <Button
+              variant="outline"
+              className="border-green-500/40 text-green-600 hover:bg-green-500/10"
+              onClick={handleSendDirect}
+              disabled={filterLoading}
+            >
+              {filterLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
+              Send to Opportunities (Skip Filter)
             </Button>
             <Button
               variant="outline"
