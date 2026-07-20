@@ -69,47 +69,79 @@ async def search_google_shopping_prices(
     password: str
 ) -> Optional[Dict[str, Any]]:
     """
-    Searches Google Shopping using DataForSEO SERP API to find lowest competition prices.
-    Uses /serp/google/shopping/live/advanced endpoint.
+    Searches Google Shopping using DataForSEO merchant/google/products task workflow.
+    POST task → poll → GET results.
     """
     if not email or not password:
         return None
 
-    url = f"{DATAFORSEO_BASE_URL}/serp/google/shopping/live/advanced"
+    import asyncio
     headers = {
         "Authorization": _get_auth_header(email, password),
         "Content-Type": "application/json"
     }
-    payload = [{
-        "keyword": keyword,
-        "location_code": 2840,
-        "language_code": "en",
-        "device": "desktop",
-        "os": "windows"
-    }]
     
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
-            logger.info(f"DataForSEO Google Shopping SERP for: {keyword}")
-            response = await client.post(url, headers=headers, json=payload)
-            response.raise_for_status()
-            data = response.json()
-            tasks = data.get("tasks") or []
-            for task in tasks:
-                if task.get("status_code") == 20000:
-                    for result in (task.get("result") or []):
-                        items = result.get("items") or []
-                        prices = []
-                        for item in items:
-                            if item.get("type") == "shopping":
-                                p = item.get("price")
-                                if p:
-                                    try: prices.append(float(p))
-                                    except: pass
-                        if prices:
-                            return {"low": min(prices), "high": max(prices), "count": len(prices)}
+            # Step 1: Create task
+            post_url = f"{DATAFORSEO_BASE_URL}/merchant/google/products/task_post"
+            payload = [{
+                "keyword": keyword,
+                "language_code": "en",
+                "location_code": 2840,
+                "sort_by": "price_low_to_high"
+            }]
+            logger.info(f"DataForSEO: posting Google Shopping task for '{keyword}'")
+            post_resp = await client.post(post_url, headers=headers, json=payload)
+            post_data = post_resp.json()
+            
+            tasks = post_data.get("tasks") or []
+            if not tasks or tasks[0].get("status_code") != 20100:
+                logger.error(f"Task post failed: {tasks[0].get('status_message') if tasks else 'no tasks'}")
+                return None
+            
+            task_id = tasks[0].get("id")
+            if not task_id:
+                return None
+            
+            # Step 2: Poll for results
+            get_url = f"{DATAFORSEO_BASE_URL}/merchant/google/products/task_get/advanced/{task_id}"
+            for attempt in range(6):
+                await asyncio.sleep(5)
+                logger.info(f"DataForSEO: fetching task {task_id}, attempt {attempt+1}")
+                get_resp = await client.get(get_url, headers=headers)
+                get_data = get_resp.json()
+                
+                result_tasks = get_data.get("tasks") or []
+                if not result_tasks:
+                    continue
+                    
+                result_task = result_tasks[0]
+                status = result_task.get("status_code")
+                
+                if status == 20000:
+                    prices = []
+                    for result in (result_task.get("result") or []):
+                        for item in (result.get("items") or []):
+                            p = item.get("price") or item.get("price_from")
+                            if p:
+                                try: prices.append(float(p))
+                                except: pass
+                    if prices:
+                        logger.info(f"DataForSEO: found {len(prices)} prices for '{keyword}', low=${min(prices)}")
+                        return {"low": min(prices), "high": max(prices), "count": len(prices)}
+                    logger.info(f"DataForSEO: no prices found for '{keyword}'")
+                    return None
+                elif status == 40602:
+                    logger.info(f"Task still in queue, waiting...")
+                    continue
                 else:
-                    logger.error(f"DataForSEO Shopping error {task.get('status_code')}: {task.get('status_message')}")
+                    logger.error(f"Task get error {status}: {result_task.get('status_message')}")
+                    return None
+                    
+            logger.warning(f"DataForSEO task timed out for '{keyword}'")
+            return None
+            
         except Exception as e:
-            logger.error(f"DataForSEO Google Shopping API error: {e}")
-    return None
+            logger.error(f"DataForSEO Google Shopping error: {e}")
+            return None

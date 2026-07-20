@@ -1225,18 +1225,58 @@ def create_app(static_dir: str) -> FastAPI:
         async with httpx.AsyncClient(timeout=60.0) as client:
             for page in range(1, pages + 1):
                 try:
-                    logger.info(f"Calling ScraperAPI Walmart Search API page {page}")
-                    # Use the flash deals URL directly to get organic (non-sponsored) products
-                    scrape_url = f"https://www.walmart.com/shop/deals/flash-deals?povid=fd_dsktp&page={page}"
+                    logger.info(f"Calling ScraperAPI Walmart flash deals page {page}")
+                    # Render the actual flash deals page and extract __NEXT_DATA__ JSON
+                    flash_url = f"https://www.walmart.com/shop/deals/flash-deals?povid=fd_dsktp"
                     res = await client.get(
-                        "https://api.scraperapi.com/structured/walmart/search",
+                        "https://api.scraperapi.com/",
                         params={
                             "api_key": api_key,
-                            "url": scrape_url,
+                            "url": flash_url,
+                            "render": "true",
                             "country_code": "us",
                         },
                         timeout=55.0
                     )
+                    res.raise_for_status()
+                    html = res.text
+                    
+                    # Extract __NEXT_DATA__ JSON from rendered page
+                    import re as _re, json as _json
+                    data = {}
+                    raw_products = []
+                    match = _re.search(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', html, _re.DOTALL)
+                    if match:
+                        try:
+                            next_data = _json.loads(match.group(1))
+                            # Navigate to the product items in Walmart's data structure
+                            props = next_data.get("props", {}).get("pageProps", {})
+                            initial_data = props.get("initialData", {})
+                            search_result = initial_data.get("searchResult", {})
+                            item_stacks = search_result.get("itemStacks", [])
+                            for stack in item_stacks:
+                                for item in stack.get("items", []):
+                                    if item.get("__typename") in ("Product", "Item"):
+                                        raw_products.append(item)
+                        except Exception as parse_err:
+                            logger.error(f"Failed to parse __NEXT_DATA__: {parse_err}")
+                    
+                    if not raw_products:
+                        # Fallback: use structured search API with multiple queries to get more products
+                        logger.info("__NEXT_DATA__ parse failed, falling back to structured search API")
+                        for query_page in range(1, 6):  # 5 pages of search results
+                            res2 = await client.get(
+                                "https://api.scraperapi.com/structured/walmart/search",
+                                params={"api_key": api_key, "query": "flash deals", "country_code": "us", "page": query_page},
+                                timeout=30.0
+                            )
+                            if res2.status_code == 200:
+                                d2 = res2.json()
+                                page_products = d2.get("organic_results") or d2.get("results") or []
+                                raw_products.extend(page_products)
+                                logger.info(f"  Fallback page {query_page}: {len(page_products)} products")
+                                if len(page_products) < 5:
+                                    break  # No more results
                     res.raise_for_status()
                     data = res.json()
                 except Exception as e:
@@ -1268,60 +1308,81 @@ def create_app(static_dir: str) -> FastAPI:
                     logger.info(f"Sample price fields: price={raw_products[0].get('price')} was_price={raw_products[0].get('was_price')} savings={raw_products[0].get('savings')}")
 
                 for item in raw_products:
-                    title = str(item.get("name") or item.get("title") or item.get("product_name") or "").strip()
+                    # Handle both __NEXT_DATA__ format and structured API format
+                    title = str(
+                        item.get("name") or item.get("title") or
+                        item.get("product_name") or item.get("productName") or ""
+                    ).strip()
                     if not title:
                         continue
 
-                    # Price range filter
+                    # Price - handle nested or flat
                     try:
-                        _check_price = float(item.get("price", {}).get("price") if isinstance(item.get("price"), dict) else item.get("price") or 0)
+                        price_data = item.get("price") or item.get("priceInfo") or {}
+                        if isinstance(price_data, dict):
+                            source_price = float(price_data.get("currentPrice", {}).get("price") or
+                                               price_data.get("price") or price_data.get("linePrice") or 0)
+                        else:
+                            source_price = float(str(price_data).replace("$","").replace(",","") or 0)
                     except Exception:
-                        _check_price = 0
-                    if min_price > 0 and _check_price < min_price:
+                        source_price = 0.0
+
+                    # Original/was price
+                    try:
+                        was_data = item.get("was_price") or item.get("wasPrice") or item.get("priceInfo", {}).get("wasPrice") or {}
+                        if isinstance(was_data, dict):
+                            original_price = float(was_data.get("price") or was_data.get("linePrice") or source_price)
+                        elif was_data:
+                            original_price = float(str(was_data).replace("$","").replace(",","") or source_price)
+                        else:
+                            original_price = source_price
+                    except Exception:
+                        original_price = source_price
+
+                    discount_pct = round(((original_price - source_price) / original_price) * 100, 1) if original_price > source_price > 0 else 0.0
+
+                    # Price range filter
+                    if min_price > 0 and source_price < min_price:
                         continue
-                    if max_price < 99999 and _check_price > max_price:
+                    if max_price < 99999 and source_price > max_price:
                         continue
 
-                    source_product_id = str(item.get("product_id") or item.get("us_item_id") or item.get("id") or "")
+                    # Product ID
+                    source_product_id = str(
+                        item.get("product_id") or item.get("us_item_id") or item.get("usItemId") or
+                        item.get("id") or item.get("itemId") or ""
+                    )
                     if not source_product_id or source_product_id == "None":
                         import hashlib as _hl
                         source_product_id = _hl.md5(title.encode()).hexdigest()[:12]
 
-                    source_url = str(item.get("product_page_url") or item.get("url") or "")
+                    # URL
+                    source_url = str(item.get("product_page_url") or item.get("url") or item.get("canonicalUrl") or "")
+                    if source_url and not source_url.startswith("http"):
+                        source_url = "https://www.walmart.com" + source_url
 
-                    try:
-                        source_price = float(item.get("price", {}).get("price") or item.get("price") or 0.0)
-                    except (ValueError, TypeError, AttributeError):
-                        try:
-                            source_price = float(str(item.get("price", 0)).replace("$", "").replace(",", "") or 0)
-                        except Exception:
-                            source_price = 0.0
-
-                    try:
-                        original_price = float(item.get("was_price", {}).get("price") if isinstance(item.get("was_price"), dict) else item.get("was_price") or item.get("original_price") or source_price)
-                    except (ValueError, TypeError, AttributeError):
-                        original_price = source_price
-
-                    discount_pct = 0.0
-                    if original_price > source_price > 0:
-                        discount_pct = round(((original_price - source_price) / original_price) * 100, 1)
-
-                    raw_images = item.get("images") or item.get("image") or item.get("thumbnail") or ""
+                    # Images
+                    raw_images = item.get("images") or item.get("image") or item.get("imageInfo", {}).get("thumbnailUrl") or item.get("thumbnail") or ""
                     if isinstance(raw_images, list):
                         image_urls = "|".join(str(img.get("url") or img if isinstance(img, dict) else img) for img in raw_images[:5] if img)
                     else:
                         image_urls = str(raw_images)
 
-                    brand = str(item.get("brand") or "").strip() or "Unbranded"
+                    brand = str(item.get("brand") or item.get("brandName") or "").strip() or "Unbranded"
 
                     try:
-                        rating = float(item.get("rating", {}).get("average_rating") or item.get("rating") or 0.0)
-                    except (ValueError, TypeError, AttributeError):
+                        rating_data = item.get("rating") or item.get("averageRating") or {}
+                        if isinstance(rating_data, dict):
+                            rating = float(rating_data.get("average_rating") or rating_data.get("averageRating") or 0.0)
+                        else:
+                            rating = float(rating_data or 0.0)
+                    except Exception:
                         rating = 0.0
 
                     try:
-                        review_count = int(item.get("rating", {}).get("number_of_reviews") or item.get("review_count") or 0)
-                    except (ValueError, TypeError, AttributeError):
+                        review_count = int(item.get("review_count") or item.get("numberOfReviews") or
+                                          (item.get("rating") or {}).get("number_of_reviews") if isinstance(item.get("rating"), dict) else 0 or 0)
+                    except Exception:
                         review_count = 0
 
                     min_margin = _get_setting(db, "default_min_margin", "30.0", float)
