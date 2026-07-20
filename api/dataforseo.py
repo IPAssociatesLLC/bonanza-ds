@@ -32,8 +32,11 @@ async def check_search_volume(
         "Content-Type": "application/json"
     }
     
-    # DataForSEO allows up to 1000 items in batch
-    payload = [{"keyword": kw} for kw in keywords]
+    # DataForSEO requires location_code and language_code
+    payload = [
+        {"keyword": kw, "location_code": 2840, "language_code": "en"}
+        for kw in keywords
+    ]
     
     results = {}
     async with httpx.AsyncClient(timeout=30.0) as client:
@@ -52,8 +55,9 @@ async def check_search_volume(
                         sv = res.get("search_volume") or 0
                         if kw:
                             results[kw] = int(sv)
+                            logger.info(f"Search volume for '{kw}': {sv}")
                 else:
-                    logger.error(f"Task status code error: {task.get('status_code')} - {task.get('status_message')}")
+                    logger.error(f"DataForSEO SV task error {task.get('status_code')}: {task.get('status_message')} | data: {str(task)[:300]}")
         except Exception as e:
             logger.error(f"DataForSEO search volume API error: {e}")
             

@@ -28,6 +28,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     async function loadUser() {
+      // TEMPORARILY DISABLED - Auth system disabled
+      setIsLoading(false)
+      return
+      
+      /*
       if (!token) {
         setIsLoading(false)
         return
@@ -49,6 +54,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } finally {
         setIsLoading(false)
       }
+      */
     }
     loadUser()
   }, [token])

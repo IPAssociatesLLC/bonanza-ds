@@ -344,18 +344,6 @@ export function ScanResultsPage() {
               Clear Walmart Results
             </Button>
             <Button
-              variant="outline"
-              onClick={handleTriggerScraper}
-              disabled={triggerLoading}
-            >
-              {triggerLoading ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Play className="mr-2 h-4 w-4 text-green-500" />
-              )}
-              Run Thunderbit Scraper
-            </Button>
-            <Button
               onClick={handleImportSelected}
               disabled={selected.size === 0 || importLoading}
             >

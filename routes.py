@@ -641,8 +641,9 @@ def create_app(static_dir: str) -> FastAPI:
 
         keywords = [clean_title(r.title) for r in scan_results]
 
-        # Batch search volume check
+        # Batch search volume check (needed for filter step 2)
         sv_map = await check_search_volume(keywords, email, password)
+        logger.info(f"Search volume results: {sv_map}")
 
         passed = 0
         failed = 0
@@ -650,19 +651,13 @@ def create_app(static_dir: str) -> FastAPI:
         for sr, kw in zip(scan_results, keywords):
             sv = sv_map.get(kw, 0)
 
-            if sv < min_sv:
-                sr.status = "ignored"
-                db.commit()
-                failed += 1
-                logger.info(f"REJECTED (search vol {sv}): {sr.title[:50]}")
-                continue
-
+            # Step 1: Check Google Shopping price FIRST (most important, saves credits if search vol fails)
             shopping = await search_google_shopping_prices(kw, email, password)
             if not shopping or not shopping.get("low", 0):
                 sr.status = "ignored"
                 db.commit()
                 failed += 1
-                logger.info(f"REJECTED (no Google Shopping data): {sr.title[:50]}")
+                logger.info(f"REJECTED (no Google Shopping results for '{kw}'): {sr.title[:60]}")
                 continue
 
             google_low = shopping["low"]
@@ -673,7 +668,15 @@ def create_app(static_dir: str) -> FastAPI:
                 sr.status = "ignored"
                 db.commit()
                 failed += 1
-                logger.info(f"REJECTED (gap {gap_pct:.1f}%): {sr.title[:50]}")
+                logger.info(f"REJECTED (price gap {gap_pct:.1f}% < required {min_margin_pct}% | walmart:${sr.source_price} google_low:${google_low}): {sr.title[:60]}")
+                continue
+
+            # Step 2: Check search volume
+            if sv < min_sv:
+                sr.status = "ignored"
+                db.commit()
+                failed += 1
+                logger.info(f"REJECTED (search vol {sv} < required {min_sv}): {sr.title[:60]}")
                 continue
 
             # PASSED - price just under Google Shopping lowest
@@ -1123,6 +1126,9 @@ def create_app(static_dir: str) -> FastAPI:
                     raw_products = list(raw_products.values())
 
                 logger.info(f"Page {page}: got {len(raw_products)} products from ScraperAPI")
+                if raw_products:
+                    logger.info(f"Sample item keys: {list(raw_products[0].keys()) if isinstance(raw_products[0], dict) else 'not a dict'}")
+                    logger.info(f"Sample price fields: price={raw_products[0].get('price')} was_price={raw_products[0].get('was_price')} savings={raw_products[0].get('savings')}")
 
                 for item in raw_products:
                     title = str(item.get("name") or item.get("title") or item.get("product_name") or "").strip()
