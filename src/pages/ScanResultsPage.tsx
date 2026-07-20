@@ -127,19 +127,27 @@ export function ScanResultsPage() {
     setFilterLoading(true)
     setFilterSuccess(null)
     setActionError(null)
+    let totalPassed = 0
+    let totalFailed = 0
     try {
       const ids = selected.size > 0 ? [...selected] : []
-      const res = await fetch("/api/scan-results/run-filter", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids })
-      })
-      const data = await res.json()
-      setFilterSuccess(data.message || `Done. Check Opportunities page.`)
+      while (true) {
+        const res = await fetch("/api/scan-results/run-filter", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ids })
+        })
+        const data = await res.json()
+        totalPassed += data.passed || 0
+        totalFailed += data.failed || 0
+        setFilterSuccess(`Processing... ${totalPassed} sent to Opportunities, ${totalFailed} rejected. ${data.remaining || 0} remaining...`)
+        if (!data.remaining || data.remaining === 0 || ids.length > 0) break
+      }
+      setFilterSuccess(`Complete! ${totalPassed} products sent to Opportunities, ${totalFailed} rejected. Check the Opportunities page.`)
       setSelected(new Set())
       refetch()
     } catch (e) {
-      setActionError("Failed to start DataForSEO filter")
+      setActionError("DataForSEO filter failed")
     } finally {
       setFilterLoading(false)
     }
