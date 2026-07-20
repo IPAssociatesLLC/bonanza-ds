@@ -864,75 +864,142 @@ def create_app(static_dir: str) -> FastAPI:
     @api.post("/scraper/trigger")
     async def trigger_walmart_scraper(req: Request, db: Session = Depends(get_db)):
         """
-        Triggers ScraperAPI Walmart Search API (structured endpoint) to scrape Walmart Flash Deals.
-        Returns clean JSON with product data (name, price, original_price, images, brand, etc.)
-        instead of raw HTML. ScraperAPI sends JSON directly to our /api/import/walmart webhook.
+        Calls ScraperAPI Walmart Search API directly and writes products to scan_results immediately.
+        No async webhook needed — products appear in Scan Results right away.
         """
         api_key = _get_setting(db, "scraperapi_api_key", "040b71425d6ecc915689b43c31b2688f")
-        default_url = _get_setting(db, "walmart_target_url", "https://www.walmart.com/shop/deals/flash-deals")
 
         try:
             payload_data = await req.json()
-            if payload_data and "urls" in payload_data and isinstance(payload_data["urls"], list) and len(payload_data["urls"]) > 0:
-                target_urls = payload_data["urls"]
-            elif payload_data and "target_url" in payload_data:
-                target_urls = [payload_data["target_url"]]
-            elif payload_data and "pages" in payload_data:
-                # Support multi-page scraping: {"pages": 3} = scrape 3 pages
-                pages = int(payload_data.get("pages", 1))
-                target_urls = [f"page_{i}" for i in range(1, pages + 1)]
-            else:
-                target_urls = [default_url]
+            pages = int(payload_data.get("pages", 1)) if payload_data else 1
         except Exception:
-            target_urls = [default_url]
-
-        # Hardcode the live Vercel webhook URL — do NOT use req.base_url here.
-        # On Vercel serverless, req.base_url returns an internal address, not the real domain.
-        webhook_url = "https://bonanza-ds.vercel.app/api/import/walmart"
+            pages = 1
 
         import httpx
-        import asyncio
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            try:
-                responses = []
-                for idx, target in enumerate(target_urls, 1):
-                    # Determine page number for pagination
-                    page = idx if target.startswith("page_") else 1
-                    
-                    # Use Walmart Search API structured endpoint for clean JSON responses
-                    # This returns product data with consistent field names instead of requiring HTML parsing
-                    payload = {
-                        "apiKey": api_key,
-                        "url": "https://api.scraperapi.com/structured/walmart/search",
-                        "apiParams": {
+        imported_count = 0
+        updated_count = 0
+
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            for page in range(1, pages + 1):
+                try:
+                    logger.info(f"Calling ScraperAPI Walmart Search API page {page}")
+                    res = await client.get(
+                        "https://api.scraperapi.com/structured/walmart/search",
+                        params={
+                            "api_key": api_key,
                             "query": "flash deals",
-                            "page": page,
                             "country_code": "us",
-                            "output_format": "json"
+                            "page": page,
                         },
-                        "webhookOutput": {
-                            "url": webhook_url
-                        },
-                        "meta": {
-                            "source": "flash_deals",
-                            "page": page
-                        }
-                    }
-                    logger.info(f"Triggering ScraperAPI Walmart Search API (page {page}) -> webhook {webhook_url}")
-                    res = await client.post("https://async.scraperapi.com/jobs", headers={"Content-Type": "application/json"}, json=payload)
+                        timeout=55.0
+                    )
                     res.raise_for_status()
-                    responses.append(res.json())
-                    await asyncio.sleep(0.5)
+                    data = res.json()
+                except Exception as e:
+                    logger.error(f"ScraperAPI call failed page {page}: {e}")
+                    raise HTTPException(500, f"ScraperAPI request failed: {str(e)}")
 
-                return {
-                    "status": "success",
-                    "message": f"Started {len(target_urls)} ScraperAPI Walmart Search job(s). Products will appear in Scan Results once ScraperAPI finishes and calls back.",
-                    "data": responses
-                }
-            except Exception as e:
-                logger.error(f"Failed to trigger ScraperAPI jobs: {e}")
-                raise HTTPException(500, f"Scraper trigger failed: {str(e)}")
+                raw_products = data.get("organic_results", [])
+                logger.info(f"Page {page}: got {len(raw_products)} products from ScraperAPI")
+
+                for item in raw_products:
+                    title = str(item.get("name") or item.get("title") or item.get("product_name") or "").strip()
+                    if not title:
+                        continue
+
+                    source_product_id = str(item.get("product_id") or item.get("us_item_id") or item.get("id") or "")
+                    if not source_product_id or source_product_id == "None":
+                        import hashlib as _hl
+                        source_product_id = _hl.md5(title.encode()).hexdigest()[:12]
+
+                    source_url = str(item.get("product_page_url") or item.get("url") or "")
+
+                    try:
+                        source_price = float(item.get("price", {}).get("price") or item.get("price") or 0.0)
+                    except (ValueError, TypeError, AttributeError):
+                        try:
+                            source_price = float(str(item.get("price", 0)).replace("$", "").replace(",", "") or 0)
+                        except Exception:
+                            source_price = 0.0
+
+                    try:
+                        original_price = float(item.get("was_price", {}).get("price") or item.get("original_price") or source_price)
+                    except (ValueError, TypeError, AttributeError):
+                        original_price = source_price
+
+                    raw_images = item.get("images") or item.get("image") or item.get("thumbnail") or ""
+                    if isinstance(raw_images, list):
+                        image_urls = "|".join(str(img.get("url") or img if isinstance(img, dict) else img) for img in raw_images[:5] if img)
+                    else:
+                        image_urls = str(raw_images)
+
+                    brand = str(item.get("brand") or "").strip() or "Unbranded"
+
+                    try:
+                        rating = float(item.get("rating", {}).get("average_rating") or item.get("rating") or 0.0)
+                    except (ValueError, TypeError, AttributeError):
+                        rating = 0.0
+
+                    try:
+                        review_count = int(item.get("rating", {}).get("number_of_reviews") or item.get("review_count") or 0)
+                    except (ValueError, TypeError, AttributeError):
+                        review_count = 0
+
+                    min_margin = _get_setting(db, "default_min_margin", "30.0", float)
+                    bonanza_fee = _get_setting(db, "bonanza_google_fee", "20.0", float)
+                    margin_factor = 1.0 - (bonanza_fee / 100.0) - (min_margin / 100.0)
+                    target_price = round((source_price) / margin_factor, 2) if margin_factor > 0.1 else round(source_price * 1.5, 2)
+                    profit = round(target_price - source_price - (target_price * (bonanza_fee / 100.0)), 2)
+
+                    sr = db.query(ScanResult).filter(ScanResult.source_product_id == source_product_id).first()
+                    if sr:
+                        sr.title = title
+                        sr.source_price = source_price
+                        sr.image_urls = image_urls
+                        sr.target_price = target_price
+                        sr.margin_pct = min_margin
+                        sr.final_profit = profit
+                        sr.brand = brand
+                        sr.rating = rating
+                        sr.review_count = review_count
+                        sr.updated_at = datetime.utcnow()
+                        sr.status = "new"
+                        updated_count += 1
+                    else:
+                        sr = ScanResult(
+                            source="walmart",
+                            source_url=source_url,
+                            source_product_id=source_product_id,
+                            title=title,
+                            image_urls=image_urls,
+                            category=item.get("category_path") or "General",
+                            brand=brand,
+                            source_price=source_price,
+                            shipping_cost=0.0,
+                            target_price=target_price,
+                            margin_pct=min_margin,
+                            final_profit=profit,
+                            rating=rating,
+                            review_count=review_count,
+                            stock=10,
+                            status="new",
+                            created_at=datetime.utcnow(),
+                            updated_at=datetime.utcnow()
+                        )
+                        db.add(sr)
+                        imported_count += 1
+
+        db.commit()
+        logger.info(f"Walmart scrape complete: {imported_count} new, {updated_count} updated")
+        return {
+            "status": "success",
+            "message": f"Imported {imported_count} new products, updated {updated_count}. Check Scan Results page.",
+            "imported": imported_count,
+            "updated": updated_count
+        }
+
+
 
     # ─── Import to Bonanza ─────────────────────────────────────────────────
 
