@@ -900,7 +900,25 @@ def create_app(static_dir: str) -> FastAPI:
                     logger.error(f"ScraperAPI call failed page {page}: {e}")
                     raise HTTPException(500, f"ScraperAPI request failed: {str(e)}")
 
-                raw_products = data.get("organic_results", [])
+                # Log actual response structure so we can see what ScraperAPI returns
+                logger.info(f"ScraperAPI response keys: {list(data.keys()) if isinstance(data, dict) else type(data).__name__}")
+                if isinstance(data, dict):
+                    for key, val in data.items():
+                        logger.info(f"  key='{key}' type={type(val).__name__} len={len(val) if isinstance(val, (list, dict)) else 'n/a'}")
+
+                # Try all possible keys ScraperAPI might use for the products array
+                raw_products = (
+                    data.get("organic_results") or
+                    data.get("results") or
+                    data.get("items") or
+                    data.get("products") or
+                    data.get("search_results") or
+                    data.get("data") or
+                    []
+                )
+                if isinstance(raw_products, dict):
+                    raw_products = list(raw_products.values())
+
                 logger.info(f"Page {page}: got {len(raw_products)} products from ScraperAPI")
 
                 for item in raw_products:
