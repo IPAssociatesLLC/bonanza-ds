@@ -603,32 +603,34 @@ def create_app(static_dir: str) -> FastAPI:
 
     @api.post("/scan-results/reset-status")
     def reset_scan_results_status(db: Session = Depends(get_db)):
-        """Reset all ignored scan results back to new so they can be filtered again."""
-        count = db.query(ScanResult).filter(ScanResult.status == "ignored").update({"status": "new"})
+        count = db.query(ScanResult).update({"status": "new"})
         db.commit()
         return {"reset": count}
 
     @api.post("/scan-results/send-to-opportunities")
-    def send_to_opportunities_direct(req_body: dict, db: Session = Depends(get_db)):
-        """
-        Bypass DataForSEO - send selected scan results directly to Opportunities
-        priced using Pricing Rules settings.
-        """
-        ids = req_body.get("ids", [])
-        if ids:
-            results = db.query(ScanResult).filter(ScanResult.id.in_(ids)).all()
-        else:
-            results = db.query(ScanResult).filter(ScanResult.status == "new").all()
+    async def send_to_opportunities_direct(req: Request, db: Session = Depends(get_db)):
+        try:
+            body = await req.json()
+            ids = body.get("ids", [])
+        except Exception:
+            ids = []
 
         bonanza_fee = _get_setting(db, "bonanza_google_fee", "20.0", float)
         min_margin = _get_setting(db, "default_min_margin", "30.0", float)
         margin_factor = 1.0 - (bonanza_fee / 100.0) - (min_margin / 100.0)
+        if margin_factor <= 0.1:
+            margin_factor = 0.5
+
+        if ids:
+            results = db.query(ScanResult).filter(ScanResult.id.in_(ids)).all()
+        else:
+            results = db.query(ScanResult).filter(ScanResult.source_price > 0).limit(200).all()
 
         created = 0
         for sr in results:
             if sr.source_price <= 0:
                 continue
-            target_price = round(sr.source_price / margin_factor, 2) if margin_factor > 0.1 else round(sr.source_price * 1.6, 2)
+            target_price = round(sr.source_price / margin_factor, 2)
             net_profit = round(target_price * (1 - bonanza_fee / 100.0) - sr.source_price, 2)
             net_margin = round((net_profit / target_price) * 100, 1) if target_price > 0 else 0.0
 
@@ -650,11 +652,11 @@ def create_app(static_dir: str) -> FastAPI:
                 category=sr.category, brand=sr.brand,
                 source_price=sr.source_price, shipping_cost=sr.shipping_cost or 0.0,
                 target_price=target_price, google_low_price=0.0, google_high_price=0.0,
-                monthly_search_volume=0,
-                rating=sr.rating or 0.0, review_count=sr.review_count or 0,
-                stock=sr.stock or 10, seller_name="Walmart",
-                margin_pct=net_margin, cashback_rate=cb_rate,
-                cashback_amount=cb_amount, best_cashback_site=cb_site,
+                monthly_search_volume=0, rating=sr.rating or 0.0,
+                review_count=sr.review_count or 0, stock=sr.stock or 10,
+                seller_name="Walmart", margin_pct=net_margin,
+                cashback_rate=cb_rate, cashback_amount=cb_amount,
+                best_cashback_site=cb_site,
                 final_profit=round(net_profit + cb_amount, 2),
                 final_margin_pct=net_margin, origin="manual_scout",
                 status="new", created_at=datetime.utcnow(), updated_at=datetime.utcnow()
