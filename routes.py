@@ -601,7 +601,90 @@ def create_app(static_dir: str) -> FastAPI:
         db.commit()
         return {"deleted": result_id}
 
-    @api.post("/scan-results/reset-status")
+    @api.post("/monitor/listings")
+    async def monitor_listings(db: Session = Depends(get_db)):
+        """
+        Hourly price & stock monitor for active Bonanza listings.
+        Checks each listed product against its source (Walmart) for price/stock changes.
+        Updates the Opportunity record and flags if action needed.
+        """
+        import httpx
+        api_key = _get_setting(db, "scraperapi_api_key", "040b71425d6ecc915689b43c31b2688f")
+        
+        # Get all imported/active opportunities with a source URL
+        active = db.query(Opportunity).filter(
+            Opportunity.status == "imported",
+            Opportunity.source_url != ""
+        ).all()
+        
+        if not active:
+            return {"status": "ok", "checked": 0, "changes": 0}
+        
+        changes = 0
+        checked = 0
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            for opp in active:
+                try:
+                    # Scrape Walmart product page for current price/stock
+                    res = await client.get(
+                        "https://api.scraperapi.com/structured/walmart/product",
+                        params={"api_key": api_key, "url": opp.source_url},
+                        timeout=25.0
+                    )
+                    if res.status_code != 200:
+                        continue
+                    data = res.json()
+                    
+                    # Extract current price
+                    try:
+                        new_price = float(data.get("price") or data.get("sale_price") or opp.source_price)
+                    except Exception:
+                        new_price = opp.source_price
+                    
+                    # Extract stock status
+                    availability = str(data.get("availability") or data.get("in_stock") or "in_stock").lower()
+                    in_stock = "out" not in availability and "unavailable" not in availability
+                    
+                    price_changed = abs(new_price - opp.source_price) > 0.01
+                    stock_changed = (not in_stock) and (opp.stock > 0)
+                    
+                    if price_changed or stock_changed:
+                        changes += 1
+                        if not in_stock:
+                            opp.stock = 0
+                            opp.status = "out_of_stock"
+                            logger.warning(f"OUT OF STOCK: {opp.title[:60]}")
+                        if price_changed:
+                            # Recalculate target price with new source price
+                            bonanza_fee = _get_setting(db, "bonanza_google_fee", "20.0", float)
+                            min_margin = _get_setting(db, "default_min_margin", "30.0", float)
+                            margin_factor = 1.0 - (bonanza_fee / 100.0) - (min_margin / 100.0)
+                            old_price = opp.source_price
+                            opp.source_price = new_price
+                            if opp.google_low_price > 0:
+                                opp.target_price = round(opp.google_low_price - 0.01, 2)
+                            else:
+                                opp.target_price = round(new_price / margin_factor, 2) if margin_factor > 0.1 else round(new_price * 1.6, 2)
+                            opp.final_profit = round(opp.target_price * (1 - bonanza_fee/100) - new_price, 2)
+                            logger.warning(f"PRICE CHANGE: {opp.title[:50]} | ${old_price} → ${new_price}")
+                        opp.updated_at = datetime.utcnow()
+                    
+                    checked += 1
+                except Exception as e:
+                    logger.error(f"Monitor error for {opp.id}: {e}")
+        
+        if changes > 0:
+            db.commit()
+        
+        return {"status": "ok", "checked": checked, "changes": changes}
+
+    @api.get("/monitor/listings")
+    async def monitor_listings_get(db: Session = Depends(get_db)):
+        """Cron-friendly GET endpoint for monitoring."""
+        return await monitor_listings(db)
+
+
     def reset_scan_results_status(db: Session = Depends(get_db)):
         count = db.query(ScanResult).update({"status": "new"})
         db.commit()
@@ -1143,13 +1226,14 @@ def create_app(static_dir: str) -> FastAPI:
             for page in range(1, pages + 1):
                 try:
                     logger.info(f"Calling ScraperAPI Walmart Search API page {page}")
+                    # Use the flash deals URL directly to get organic (non-sponsored) products
+                    scrape_url = f"https://www.walmart.com/shop/deals/flash-deals?povid=fd_dsktp&page={page}"
                     res = await client.get(
                         "https://api.scraperapi.com/structured/walmart/search",
                         params={
                             "api_key": api_key,
-                            "query": "flash deals",
+                            "url": scrape_url,
                             "country_code": "us",
-                            "page": page,
                         },
                         timeout=55.0
                     )

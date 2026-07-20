@@ -322,12 +322,15 @@ export function OpportunitiesPage() {
                       />
                     </TableHead>
                     <TableHead>Product</TableHead>
+                    <TableHead>Brand</TableHead>
                     <TableHead>Source</TableHead>
-                    <TableHead className="text-right">Source Price</TableHead>
-                    <TableHead className="text-right">Target Price</TableHead>
+                    <TableHead className="text-right">Buy Price</TableHead>
+                    <TableHead className="text-right">List Price</TableHead>
+                    <TableHead className="text-right">Google Low</TableHead>
+                    <TableHead className="text-right">Monthly Searches</TableHead>
+                    <TableHead className="text-right">Net Profit</TableHead>
                     <TableHead className="text-right">Margin %</TableHead>
                     <TableHead className="text-right">Cashback</TableHead>
-                    <TableHead className="text-right">Final Profit</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="w-[50px]"></TableHead>
                   </TableRow>
@@ -366,23 +369,35 @@ export function OpportunitiesPage() {
                           </div>
                         </div>
                       </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{(opp as any).brand || "—"}</TableCell>
                       <TableCell>
                         <Badge variant="outline" className="capitalize">{opp.source}</Badge>
                       </TableCell>
                       <TableCell className="text-right text-muted-foreground">{formatCurrency(opp.source_price)}</TableCell>
-                      <TableCell className="text-right font-medium text-foreground">{formatCurrency(opp.target_price)}</TableCell>
-                      <TableCell className="text-right">{getMarginBadge(opp.margin_pct)}</TableCell>
+                      <TableCell className="text-right font-medium">{formatCurrency(opp.target_price)}</TableCell>
                       <TableCell className="text-right">
-                        {opp.cashback_amount > 0 ? (
-                          <span className="text-sm text-green-500">{formatCurrency(opp.cashback_amount)}</span>
-                        ) : (
-                          <span className="text-sm text-muted-foreground">—</span>
-                        )}
+                        {opp.google_low_price > 0 ? (
+                          <span className="text-blue-500">{formatCurrency(opp.google_low_price)}</span>
+                        ) : <span className="text-muted-foreground">—</span>}
                       </TableCell>
                       <TableCell className="text-right">
-                        <span className={`text-sm font-medium ${opp.final_profit >= 0 ? "text-green-500" : "text-destructive"}`}>
+                        {opp.monthly_search_volume > 0 ? (
+                          <span className="text-purple-500">{formatNumber(opp.monthly_search_volume)}/mo</span>
+                        ) : <span className="text-muted-foreground">—</span>}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <span className={`font-medium ${opp.final_profit >= 0 ? "text-green-500" : "text-destructive"}`}>
                           {formatCurrency(opp.final_profit)}
                         </span>
+                      </TableCell>
+                      <TableCell className="text-right">{getMarginBadge(opp.margin_pct)}</TableCell>
+                      <TableCell className="text-right">
+                        {opp.cashback_rate > 0 ? (
+                          <div>
+                            <span className="text-green-500 text-sm">{opp.cashback_rate}%</span>
+                            {opp.best_cashback_site && <p className="text-xs text-muted-foreground">{opp.best_cashback_site}</p>}
+                          </div>
+                        ) : <span className="text-muted-foreground">—</span>}
                       </TableCell>
                       <TableCell>{getStatusBadge(opp.status)}</TableCell>
                       <TableCell>

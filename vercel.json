@@ -8,5 +8,11 @@
       "source": "/(.*)",
       "destination": "/index.html"
     }
+  ],
+  "crons": [
+    {
+      "path": "/api/monitor/listings",
+      "schedule": "0 * * * *"
+    }
   ]
 }
