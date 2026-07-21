@@ -743,7 +743,7 @@ def create_app(static_dir: str) -> FastAPI:
                 cashback_rate=cb_rate, cashback_amount=cb_amount,
                 best_cashback_site=cb_site,
                 final_profit=round(net_profit + cb_amount, 2),
-                final_margin_pct=net_margin, origin="manual_scout",
+                final_margin_pct=net_margin, origin="automation_engine",
                 status="new", created_at=datetime.utcnow(), updated_at=datetime.utcnow()
             )
             db.add(opp)
