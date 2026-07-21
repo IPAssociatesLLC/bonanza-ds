@@ -471,7 +471,7 @@ def create_app(static_dir: str) -> FastAPI:
         offset: int = 0,
         db: Session = Depends(get_db),
     ):
-        q = db.query(Opportunity).filter(Opportunity.origin == 'automation_engine')
+        q = db.query(Opportunity).filter(Opportunity.source == "walmart")
         if status:
             q = q.filter(Opportunity.status == status)
         if source:
